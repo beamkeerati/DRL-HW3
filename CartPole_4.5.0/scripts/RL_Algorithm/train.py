@@ -102,15 +102,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ========================= Can be modified ========================== #
 
     # hyperparameters
-    num_of_action = None
-    action_range = [None, None]  # [min, max]
-    discretize_state_weight = [None, None, None, None]  # [pose_cart:int, pose_pole:int, vel_cart:int, vel_pole:int]
-    learning_rate = None
-    n_episodes = None
-    start_epsilon = None
-    epsilon_decay = None  # reduce the exploration over time
-    final_epsilon = None
-    discount = None
+    num_of_action = 2
+    action_range = [-1, 1.0]  # [min, max]
+    discretize_state_weight = [10, 50, 10, 50]  # [pose_cart:int, pose_pole:int, vel_cart:int, vel_pole:int]
+    learning_rate = 0.05
+    n_episodes = 500
+    start_epsilon = 1.0
+    epsilon_decay = 0.99  # reduce the exploration over time
+    final_epsilon = 0.05
+    discount = 0.99  # Set discount to a valid float (e.g., 0.99)
 
     task_name = str(args_cli.task).split('-')[0]  # Stabilize, SwingUp
     Algorithm_name = "Q_Learning"

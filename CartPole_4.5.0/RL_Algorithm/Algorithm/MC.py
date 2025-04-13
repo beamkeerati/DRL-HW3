@@ -39,13 +39,48 @@ class MC(BaseAlgorithm):
             discount_factor=discount_factor,
         )
         
-    def update(
-        self,
-        
-    ):
+    def update(self, obs: dict, action: int, reward: float, next_obs: dict, done: bool):
         """
         Update Q-values using Monte Carlo.
 
-        This method applies the Monte Carlo update rule to improve policy decisions by updating the Q-table.
+        This method accumulates the current transition (obs, action, reward, next_obs) into the episode history.
+        When an episode terminates (done is True), it computes the return (G) for each time step in the episode
+        (using discounted future rewards) and updates the Q-value for the corresponding state–action pair via:
+
+            Q(s, a) ← Q(s, a) + α * (G - Q(s, a))
+
+        After the update, the episode histories are cleared.
+
+        Args:
+            obs (dict): The current observation (state) as a dictionary.
+            action (int): The discrete action taken in the current state.
+            reward (float): The reward received after taking the action.
+            next_obs (dict): The next observation (state) as a dictionary.
+            done (bool): Flag indicating whether the episode has terminated.
         """
-        pass
+        # Append the current transition to the history.
+        self.obs_hist.append(obs)
+        self.action_hist.append(action)
+        self.reward_hist.append(reward)
+        
+        # Only perform the Monte Carlo update if the episode has terminated.
+        if done:
+            G = 0.0
+            # Iterate backwards over the episode history to compute returns.
+            for t in reversed(range(len(self.reward_hist))):
+                G = self.reward_hist[t] + self.discount_factor * G
+                state = self.discretize_state(self.obs_hist[t])
+                a = self.action_hist[t]
+                # Increment the visit count for analysis (optional).
+                self.n_values[state][a] += 1
+                # Update the Q-value using the incremental update rule.
+                self.q_values[state][a] += self.lr * (G - self.q_values[state][a])
+            
+            # Optionally, print the updated Q-values for debugging.
+            # print(f"Q-value: {self.q_values}")
+            
+            # Clear the episode histories after the update.
+            self.obs_hist = []
+            self.action_hist = []
+            self.reward_hist = []
+

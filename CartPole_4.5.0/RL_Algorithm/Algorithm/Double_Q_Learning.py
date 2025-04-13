@@ -39,16 +39,54 @@ class Double_Q_Learning(BaseAlgorithm):
             discount_factor=discount_factor,
         )
         
-    def update(
-        self,
-        #========= put your code here =========#
-
-        
-    ):
+    def update(self, obs: dict, action: int, reward: float, next_obs: dict, done: bool):
         """
         Update Q-values using Double Q-Learning.
 
-        This method applies the Double Q-Learning update rule to improve policy decisions by updating the Q-table.
+        This method applies the Double Q-Learning update rule:
+        
+            With 50% probability, update qa_values:
+                a_max = argmax_a qa_values(next_state)
+                target = r + γ * qb_values(next_state)[a_max]   (if not terminal)
+            Otherwise, update qb_values:
+                a_max = argmax_a qb_values(next_state)
+                target = r + γ * qa_values(next_state)[a_max]   (if not terminal)
+        
+        Finally, update the overall q_values as the average of qa_values and qb_values.
+
+        Args:
+            obs (dict): The current observation (state).
+            action (int): The discrete action taken.
+            reward (float): The reward received after taking the action.
+            next_obs (dict): The next observation (state).
+            done (bool): Flag indicating whether the episode has terminated.
         """
-        pass
-        #======================================#
+        # Discretize the current and next states.
+        state = self.discretize_state(obs)
+        next_state = self.discretize_state(next_obs)
+        
+        # Randomly decide which Q-table to update.
+        if np.random.rand() < 0.5:
+            # Update qa_values.
+            current_q = self.qa_values[state][action]
+            if done:
+                target = reward
+            else:
+                a_max = int(np.argmax(self.qa_values[next_state]))
+                target = reward + self.discount_factor * self.qb_values[next_state][a_max]
+            self.qa_values[state][action] = current_q + self.lr * (target - current_q)
+        else:
+            # Update qb_values.
+            current_q = self.qb_values[state][action]
+            if done:
+                target = reward
+            else:
+                a_max = int(np.argmax(self.qb_values[next_state]))
+                target = reward + self.discount_factor * self.qa_values[next_state][a_max]
+            self.qb_values[state][action] = current_q + self.lr * (target - current_q)
+        
+        # Update the overall Q-value as the average of qa_values and qb_values.
+        self.q_values[state][action] = (self.qa_values[state][action] + self.qb_values[state][action]) / 2.0
+
+
+

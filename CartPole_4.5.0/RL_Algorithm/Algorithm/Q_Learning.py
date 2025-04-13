@@ -40,13 +40,45 @@ class Q_Learning(BaseAlgorithm):
             discount_factor=discount_factor,
         )
         
-    def update(
-        self,
-
-    ):
+    def update(self, obs: dict, action: int, reward: float, next_obs: dict, done: bool):
         """
         Update Q-values using Q-Learning.
 
         This method applies the Q-Learning update rule to improve policy decisions by updating the Q-table.
+        The update rule is:
+        
+            Q(s, a) ← Q(s, a) + α * (r + γ * max_a' Q(s', a') - Q(s, a))
+        
+        where:
+            - s: current state (discretized)
+            - a: action taken
+            - r: reward received
+            - s': next state (discretized)
+            - α: learning rate (self.lr)
+            - γ: discount factor (self.discount_factor)
+        
+        Args:
+            obs (dict): The current observation (state) as a dictionary.
+            action (int): The discrete action taken.
+            reward (float): The reward received after taking the action.
+            next_obs (dict): The next observation (state) as a dictionary.
+            done (bool): Flag indicating whether the episode has terminated.
         """
-        pass
+        # Discretize the current and next states using the provided discretization method.
+        state = self.discretize_state(obs)
+        next_state = self.discretize_state(next_obs)
+
+        # Retrieve the current Q-value for the state-action pair.
+        current_q = self.q_values[state][action]
+        
+        
+        # If the episode has terminated, no future reward is considered.
+        if done:
+            target = reward
+        else:
+            # Otherwise, compute the target as the sum of the immediate reward and the discounted maximum future reward.
+            target = reward + self.discount_factor * np.max(self.q_values[next_state])
+        
+        # Update the Q-value using the learning rate.
+        self.q_values[state][action] = current_q + self.lr * (target - current_q)
+
