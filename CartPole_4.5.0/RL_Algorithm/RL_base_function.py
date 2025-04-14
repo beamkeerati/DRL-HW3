@@ -126,20 +126,40 @@ class BaseAlgorithm():
 
         self.w = np.zeros((4, num_of_action))
         self.memory = ReplayBuffer(buffer_size, batch_size)
-
+    
     def q(self, obs, a=None):
         """Returns the linearly-estimated Q-value for a given state and action."""
         # ========= put your code here ========= #
+        if isinstance(obs, dict):
+            if 'policy' in obs:
+                # Extract tensor and move to CPU, then flatten into a 1D array
+                if isinstance(obs['policy'], torch.Tensor):
+                    # Ensure tensor is moved to CPU before converting to NumPy
+                    features = obs['policy'].detach().cpu().numpy().flatten()
+                else:
+                    features = np.array(obs['policy']).flatten()
+            else:
+                # Extract relevant observation features from the dictionary
+                pose_cart = float(obs.get('pose_cart', 0.0))
+                pose_pole = float(obs.get('pose_pole', 0.0))
+                vel_cart = float(obs.get('vel_cart', 0.0))
+                vel_pole = float(obs.get('vel_pole', 0.0))
+                features = np.array([pose_cart, pose_pole, vel_cart, vel_pole])
+        elif isinstance(obs, torch.Tensor):
+            # Handle tensor observations - ensure it's moved to CPU first
+            features = obs.detach().cpu().numpy().flatten()
+        else:
+            # If obs is not a dictionary, convert it to numpy array
+            features = np.array(obs).flatten()
+
         if a is None:
             # Get q values from all actions in state
             q_values = np.zeros(self.num_of_action)
             for action in range(self.num_of_action):
-                features = np.array(obs)
                 q_values[action] = np.dot(features, self.w[:, action])
             return q_values
         else:
             # Get q values given action & state
-            features = np.array(obs)
             return np.dot(features, self.w[:, a])
         # ====================================== #
         
