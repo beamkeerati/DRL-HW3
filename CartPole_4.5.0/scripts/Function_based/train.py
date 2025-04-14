@@ -10,7 +10,7 @@ from isaaclab.app import AppLauncher
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from RL_Algorithm.Function_Aproximation.DQN import DQN
+from RL_Algorithm.Function_based.DQN import DQN
 
 from tqdm import tqdm
 
@@ -100,18 +100,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ========================= Can be modified ========================== #
 
     # hyperparameters
-    num_of_action = None
-    action_range = [None, None]  
-    learning_rate = None
-    hidden_dim = None
-    n_episodes = None
-    initial_epsilon = None
-    epsilon_decay = None  
-    final_epsilon = None
-    discount = None
-    buffer_size = None
-    batch_size = None
-
+    num_of_action = 2                     # two discrete actions (e.g., push left or push right)
+    action_range = [-2.5, 2.5]            # continuous force range corresponding to actions
+    learning_rate = 1e-3                  # learning rate for optimizer
+    hidden_dim = 64                       # number of neurons in the hidden layer
+    n_episodes = 1000                     # number of training episodes
+    initial_epsilon = 1.0                 # starting exploration rate
+    epsilon_decay = 0.001                 # epsilon decay per step (or per action)
+    final_epsilon = 0.001                 # minimum exploration rate
+    discount = 0.95                       # discount factor for future rewards
+    buffer_size = 10000                   # replay buffer capacity
+    batch_size = 64                       # minibatch size for experience replay
 
     # set up matplotlib
     is_ipython = 'inline' in matplotlib.get_backend()
@@ -138,12 +137,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         action_range=action_range,
         learning_rate=learning_rate,
         hidden_dim=hidden_dim,
-        initial_epsilon = initial_epsilon,
-        epsilon_decay = epsilon_decay,
-        final_epsilon = final_epsilon,
-        discount_factor = discount,
-        buffer_size = buffer_size,
-        batch_size = batch_size,
+        initial_epsilon=initial_epsilon,
+        epsilon_decay=epsilon_decay,
+        final_epsilon=final_epsilon,
+        discount_factor=discount,
+        buffer_size=buffer_size,
+        batch_size=batch_size,
     )
 
     # reset environment
@@ -155,7 +154,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         # with torch.inference_mode():
         
         for episode in tqdm(range(n_episodes)):
-            agent.lean(env)
+            agent.learn(env)
 
         if episode % 100 == 0:
             print(agent.epsilon)

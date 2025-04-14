@@ -40,6 +40,7 @@ class ReplayBuffer:
             next_state (Tensor): The next state resulting from the action.
             done (bool): Whether the episode has terminated.
         """
+        self.memory.append((state, action, reward, next_state, done))
 
     def sample(self):
         """
@@ -52,6 +53,9 @@ class ReplayBuffer:
             - next_state_batch: Batch of next states.
             - done_batch: Batch of terminal state flags.
         """
+        batch = random.sample(self.memory, self.batch_size)
+        states, actions, rewards, next_states, dones = zip(*batch)
+        return states, actions, rewards, next_states, dones
 
     def __len__(self):
         """
@@ -112,12 +116,17 @@ class BaseAlgorithm():
     def q(self, obs, a=None):
         """Returns the linearly-estimated Q-value for a given state and action."""
         # ========= put your code here ========= #
-        if a==None:
-            # Get q values from all action in state
-            pass
+        # Convert observation to numpy array for computation
+        if isinstance(obs, torch.Tensor):
+            obs_arr = obs.detach().cpu().numpy()
         else:
-            # Get q values given action & state
-            pass
+            obs_arr = np.array(obs)
+        if a is None:
+            # Return Q-values for all actions (dot product of state and weight matrix)
+            return obs_arr.dot(self.w)
+        else:
+            # Return Q-value for the given action index
+            return float(obs_arr.dot(self.w[:, a]))
         # ====================================== #
         
     
@@ -133,7 +142,13 @@ class BaseAlgorithm():
             torch.Tensor: Scaled action tensor.
         """
         # ========= put your code here ========= #
-        pass
+        action_min, action_max = self.action_range[0], self.action_range[1]
+        if self.num_of_action == 1:
+            # Only one action available: map to midpoint of range
+            return torch.tensor((action_min + action_max) / 2.0, dtype=torch.float32)
+        # Calculate step size for each discrete action
+        step = (action_max - action_min) / (self.num_of_action - 1)
+        return torch.tensor(action_min + action * step, dtype=torch.float32)
         # ====================================== #
     
     def decay_epsilon(self):
@@ -141,7 +156,10 @@ class BaseAlgorithm():
         Decay epsilon value to reduce exploration over time.
         """
         # ========= put your code here ========= #
-        pass
+        if self.epsilon > self.final_epsilon:
+            self.epsilon -= self.epsilon_decay
+            if self.epsilon < self.final_epsilon:
+                self.epsilon = self.final_epsilon
         # ====================================== #
 
     def save_w(self, path, filename):
@@ -149,7 +167,21 @@ class BaseAlgorithm():
         Save weight parameters.
         """
         # ========= put your code here ========= #
-        pass
+        os.makedirs(path, exist_ok=True)
+        full_path = os.path.join(path, filename)
+        data = {}
+        if hasattr(self, "policy_net"):
+            # If using a neural network, save its state_dict (parameters)
+            state_dict = self.policy_net.state_dict()
+            # Convert tensor values to lists for JSON serialization
+            for key, value in state_dict.items():
+                data[key] = value.cpu().numpy().tolist()
+        else:
+            # If using linear weights, save the weight matrix
+            data["w"] = self.w.tolist()
+        # Write the data to a JSON file
+        with open(full_path, 'w') as f:
+            json.dump(data, f)
         # ====================================== #
             
     def load_w(self, path, filename):
@@ -157,7 +189,22 @@ class BaseAlgorithm():
         Load weight parameters.
         """
         # ========= put your code here ========= #
-        pass
+        full_path = os.path.join(path, filename)
+        with open(full_path, 'r') as f:
+            data = json.load(f)
+        if hasattr(self, "policy_net"):
+            # Load parameters into the neural network
+            state_dict = {}
+            for key, value in data.items():
+                state_dict[key] = torch.tensor(value, dtype=torch.float32, device=self.device)
+            self.policy_net.load_state_dict(state_dict)
+            # If a target network exists, update it as well
+            if hasattr(self, "target_net"):
+                self.target_net.load_state_dict(self.policy_net.state_dict())
+        else:
+            # Load parameters into the linear weight matrix
+            if "w" in data:
+                self.w = np.array(data["w"])
         # ====================================== #
 
 
