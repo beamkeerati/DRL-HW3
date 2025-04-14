@@ -117,10 +117,8 @@ class DQN(BaseAlgorithm):
             if 'policy' in obs:
                 # If observation contains a policy field with tensor
                 if isinstance(obs['policy'], torch.Tensor):
-                    # Ensure tensor is on the correct device
                     return obs['policy'].to(self.device)
                 else:
-                    # Convert non-tensor to tensor on the correct device
                     return torch.tensor(obs['policy'], dtype=torch.float32, device=self.device)
             else:
                 # Extract relevant observation features
@@ -129,14 +127,14 @@ class DQN(BaseAlgorithm):
                 vel_cart = obs.get('vel_cart', 0.0)
                 vel_pole = obs.get('vel_pole', 0.0)
                 return torch.tensor([pose_cart, pose_pole, vel_cart, vel_pole], 
-                                    dtype=torch.float32, device=self.device).unsqueeze(0)
-        elif isinstance(obs, torch.Tensor):
-            # Ensure tensor is on the correct device
-            return obs.to(self.device).unsqueeze(0) if obs.dim() == 1 else obs.to(self.device)
-        else:
-            # Convert to tensor on the correct device
+                                dtype=torch.float32, device=self.device).unsqueeze(0)
+        elif not isinstance(obs, torch.Tensor):
+            # Convert numpy arrays or lists to tensor
             return torch.tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
-        
+        else:
+            # Return the tensor if it's already a tensor
+            return obs.to(self.device)
+
     def select_action(self, state):
         """
         Select an action based on an epsilon-greedy policy.
@@ -148,6 +146,15 @@ class DQN(BaseAlgorithm):
             Tensor: The selected action.
         """
         # ========= put your code here ========= #
+        try:
+            print(f"DEBUG - State type: {type(state)}")
+            if isinstance(state, dict):
+                print(f"DEBUG - State keys: {state.keys()}")
+                if 'policy' in state:
+                    print(f"DEBUG - Policy type: {type(state['policy'])}")
+        except Exception as e:
+            print(f"DEBUG - Error inspecting state: {e}")
+            
         self.steps_done += 1
         # Epsilon-greedy action selection
         if random.random() < self.epsilon:
@@ -156,18 +163,18 @@ class DQN(BaseAlgorithm):
         else:
             # Exploit - best known action
             with torch.no_grad():
-                # Preprocess the state ensuring it's on the correct device
+                # Preprocess the state
                 state_tensor = self.preprocess_observation(state)
-
+                
                 # Get action with highest Q-value
                 action_idx = self.policy_net(state_tensor).max(1)[1].item()
-
+        
         # Decay epsilon
         self.decay_epsilon()
-
+        
         # Convert discrete action to continuous value
         action = self.scale_action(action_idx)
-
+        
         return action, action_idx
         # ====================================== #
 
@@ -183,11 +190,11 @@ class DQN(BaseAlgorithm):
         Returns:
             Q-value(s) for the state-action pair(s)
         """
-        # Preprocess and ensure observation is on the correct device
+        # Process the observation
         state_tensor = self.preprocess_observation(obs)
 
         with torch.no_grad():
-            q_values = self.policy_net(state_tensor)[0].cpu().numpy()
+            q_values = self.policy_net(state_tensor)[0].cpu().numpy()  # Added .cpu() before .numpy()
 
         if a is None:
             return q_values
@@ -251,37 +258,33 @@ class DQN(BaseAlgorithm):
 
         states, actions, rewards, next_states, dones = sample
 
-        # Process observation tensors ensuring they're on the correct device
+        # Process each state and next_state to handle different observation formats
         processed_states = []
-        non_final_next_states = []
+        processed_next_states = []
 
-        for i, state in enumerate(states):
-            # Process state observation and ensure it's on the right device
+        for state in states:
             processed_state = self.preprocess_observation(state).squeeze(0)
             processed_states.append(processed_state)
 
-        # Create state_batch on the specified device
-        state_batch = torch.stack(processed_states).to(self.device)
+        for next_state in next_states:
+            processed_next_state = self.preprocess_observation(next_state).squeeze(0)
+            processed_next_states.append(processed_next_state)
+
+        # Stack the processed states
+        state_batch = torch.stack(processed_states)
         action_batch = torch.tensor(actions, dtype=torch.long, device=self.device).unsqueeze(1)
         reward_batch = torch.tensor(rewards, dtype=torch.float32, device=self.device).unsqueeze(1)
 
-        # Create mask of non-final states
+        # Create mask of non-final states and stack non-final next states
         non_final_mask = torch.tensor([not done for done in dones], dtype=torch.bool, device=self.device)
 
-        # Process only the non-final next states
+        # Only stack non-final next states if there are any
         if any(~np.array(dones)):
-            for i, next_state in enumerate(next_states):
-                if not dones[i]:
-                    # Process next_state and ensure it's on the right device
-                    processed_next_state = self.preprocess_observation(next_state).squeeze(0)
-                    non_final_next_states.append(processed_next_state)
-
-            # Stack non-final next states on the specified device
-            non_final_next_states_batch = torch.stack(non_final_next_states).to(self.device)
+            non_final_next_states = torch.stack([processed_next_states[i] for i in range(len(next_states)) if not dones[i]])
         else:
-            non_final_next_states_batch = torch.tensor([], device=self.device)
+            non_final_next_states = torch.tensor([], device=self.device)
 
-        return non_final_mask, non_final_next_states_batch, state_batch, action_batch, reward_batch
+        return non_final_mask, non_final_next_states, state_batch, action_batch, reward_batch
         # ====================================== #
 
     def update_policy(self):
