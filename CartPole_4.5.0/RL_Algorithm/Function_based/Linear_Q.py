@@ -58,7 +58,26 @@ class Linear_QN(BaseAlgorithm):
 
         """
         # ========= put your code here ========= #
-        pass
+        # Extract features from observation
+        features = np.array(obs)
+        
+        # Calculate current Q-value
+        current_q = self.q(obs, action)
+        
+        # Calculate target Q-value
+        if terminated:
+            target = reward
+        else:
+            # Q-learning uses the max Q-value of the next state (not the actual next action)
+            next_q_values = self.q(next_obs)
+            max_next_q = np.max(next_q_values)
+            target = reward + self.discount_factor * max_next_q
+        
+        # Calculate TD error
+        td_error = target - current_q
+        
+        # Update weights using gradient descent
+        self.w[:, action] += self.lr * td_error * features
         # ====================================== #
 
     def select_action(self, state):
@@ -72,7 +91,20 @@ class Linear_QN(BaseAlgorithm):
             Tensor: The selected action.
         """
         # ========= put your code here ========= #
-        pass
+        # Convert state to feature representation
+        # Epsilon-greedy action selection
+        if np.random.random() < self.epsilon:
+            # Explore: random action
+            action_idx = np.random.randint(self.num_of_action)
+        else:
+            # Exploit: best action
+            q_values = self.q(state)
+            action_idx = np.argmax(q_values)
+        
+        # Scale the action to continuous space
+        action = self.scale_action(action_idx)
+        
+        return action, action_idx
         # ====================================== #
 
     def learn(self, env, max_steps):
@@ -90,11 +122,39 @@ class Linear_QN(BaseAlgorithm):
         # Flag to indicate episode termination (boolean)
         # Step counter (int)
         # ========= put your code here ========= #
-        pass
+        # Reset environment
+        state, _ = env.reset()
+        total_reward = 0
+        done = False
+        steps = 0
+        
+        # SARSA algorithm loop
+        prev_action = None
+        
+        while not done and steps < max_steps:
+            # If this is the first step, select an action
+            if prev_action is None:
+                action, action_idx = self.select_action(state)
+            else:
+                action_idx = prev_action
+                action = self.scale_action(action_idx)
+            
+            # Take a step in the environment
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+            
+            # Select next action
+            next_action, next_action_idx = self.select_action(next_state)
+            
+            # Update weights (SARSA update)
+            self.update(state, action_idx, reward.item(), next_state, next_action_idx, terminated)
+            
+            # Update tracking variables
+            total_reward += reward.item()
+            state = next_state
+            prev_action = next_action_idx
+            steps += 1
+            
+            # Decay epsilon
+            self.decay_epsilon()
         # ====================================== #
-    
-
-
-
-
-    

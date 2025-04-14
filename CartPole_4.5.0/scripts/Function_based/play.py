@@ -1,4 +1,4 @@
-"""Script to train RL agent."""
+"""Script to play RL agent."""
 
 """Launch Isaac Sim Simulator first."""
 
@@ -10,19 +10,22 @@ from isaaclab.app import AppLauncher
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from RL_Algorithm.Function_Aproximation.DQN import DQN
-
 from tqdm import tqdm
 
 # add argparse arguments
-parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
-parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
+parser = argparse.ArgumentParser(description="Play with a trained RL agent.")
+parser.add_argument("--video", action="store_true", default=False, help="Record videos during play.")
 parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
 parser.add_argument("--video_interval", type=int, default=2000, help="Interval between video recordings (in steps).")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
+parser.add_argument("--algorithm", type=str, default="DQN", 
+                    choices=["DQN", "Linear_Q", "AC", "MC_REINFORCE"],
+                    help="RL algorithm to use for play")
+parser.add_argument("--model_path", type=str, help="Path to the model file")
+parser.add_argument("--n_episodes", type=int, default=10, help="Number of episodes to play")
 
 
 # append AppLauncher cli args
@@ -49,13 +52,8 @@ import random
 
 import matplotlib
 import matplotlib.pyplot as plt
-from collections import namedtuple, deque
-from itertools import count
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 import numpy as np
-
+from collections import deque
 
 from isaaclab.envs import (
     DirectMARLEnv,
@@ -64,9 +62,25 @@ from isaaclab.envs import (
     ManagerBasedRLEnvCfg,
     multi_agent_to_single_agent,
 )
-# from omni.isaac.lab.utils.dict import print_dict
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 from isaaclab_tasks.utils.hydra import hydra_task_config
+
+# Dynamic import of the selected algorithm
+def get_algorithm_class(algorithm_name):
+    if algorithm_name == "DQN":
+        from RL_Algorithm.Function_based.DQN import DQN
+        return DQN
+    elif algorithm_name == "Linear_Q":
+        from RL_Algorithm.Function_based.Linear_Q import Linear_QN
+        return Linear_QN
+    elif algorithm_name == "AC":
+        from RL_Algorithm.Function_based.AC import Actor_Critic
+        return Actor_Critic
+    elif algorithm_name == "MC_REINFORCE":
+        from RL_Algorithm.Function_based.MC_REINFORCE import MC_REINFORCE
+        return MC_REINFORCE
+    else:
+        raise ValueError(f"Unknown algorithm: {algorithm_name}")
 
 # Import extensions to set up environment tasks
 import CartPole.tasks  # noqa: F401
@@ -76,11 +90,9 @@ torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
 
-steps_done = 0
-
 @hydra_task_config(args_cli.task, "sb3_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
-    """Train with stable-baselines agent."""
+    """Play with trained agent."""
     # randomly sample a seed if seed = -1
     if args_cli.seed == -1:
         args_cli.seed = random.randint(0, 10000)
@@ -100,26 +112,26 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ========================= Can be modified ========================== #
 
     # hyperparameters
-    num_of_action = None
-    action_range = [None, None]  
-    learning_rate = None
-    hidden_dim = None
-    n_episodes = None
-    initial_epsilon = None
-    epsilon_decay = None  
-    final_epsilon = None
-    discount = None
-    buffer_size = None
-    batch_size = None
+    num_of_action = 3
+    action_range = [-1, 1.0]  # [min, max]
+    # For IsaacLab environments, we need to hardcode the observation dimension
+    # CartPole has 4 observation dimensions: cart position, cart velocity, pole angle, pole velocity
+    n_observations = 4  # Hardcoded for CartPole environment
+    hidden_dim = 64
+    dropout = 0.3
+    learning_rate = 0.01
+    tau = 0.005
+    n_episodes = args_cli.n_episodes
+    initial_epsilon = 0.01  # Low epsilon for evaluation
+    epsilon_decay = 1.0     # No decay during evaluation
+    final_epsilon = 0.01
+    discount_factor = 0.99
+    buffer_size = 10000
+    batch_size = 64
 
-
-    # set up matplotlib
-    is_ipython = 'inline' in matplotlib.get_backend()
-    if is_ipython:
-        from IPython import display
-
-    plt.ion()
-
+    algorithm_name = args_cli.algorithm
+    print(f"Playing with algorithm: {algorithm_name}")
+    
     # if GPU is to be used
     device = torch.device(
         "cuda" if torch.cuda.is_available() else
@@ -129,56 +141,183 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     print("device: ", device)
 
-    agent = DQN(
-        device=device,
-        num_of_action=num_of_action,
-        action_range=action_range,
-        learning_rate=learning_rate,
-        hidden_dim=hidden_dim,
-        initial_epsilon = initial_epsilon,
-        epsilon_decay = epsilon_decay,
-        final_epsilon = final_epsilon,
-        discount_factor = discount,
-        buffer_size = buffer_size,
-        batch_size = batch_size,
-    )
+    # Get the appropriate algorithm class
+    AlgorithmClass = get_algorithm_class(algorithm_name)
+    
+    # Initialize agent based on selected algorithm
+    if algorithm_name == "DQN":
+        agent = AlgorithmClass(
+            device=device,
+            num_of_action=num_of_action,
+            action_range=action_range,
+            n_observations=n_observations,
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+            learning_rate=learning_rate,
+            tau=tau,
+            initial_epsilon=initial_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=discount_factor,
+            buffer_size=buffer_size,
+            batch_size=batch_size,
+        )
+    elif algorithm_name == "MC_REINFORCE":
+        agent = AlgorithmClass(
+            device=device,
+            num_of_action=num_of_action,
+            action_range=action_range,
+            n_observations=n_observations,
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+            learning_rate=learning_rate,
+            discount_factor=discount_factor,
+        )
+    elif algorithm_name == "Linear_Q":
+        agent = AlgorithmClass(
+            num_of_action=num_of_action,
+            action_range=action_range,
+            learning_rate=learning_rate,
+            initial_epsilon=initial_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=discount_factor,
+        )
+    elif algorithm_name == "AC":  # Actor-Critic (PPO)
+        agent = AlgorithmClass(
+            device=device,
+            num_of_action=num_of_action,
+            action_range=action_range,
+            n_observations=n_observations,
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+            learning_rate=learning_rate,
+            tau=tau,
+            discount_factor=discount_factor,
+            buffer_size=buffer_size,
+            batch_size=batch_size,
+        )
 
+    # Determine model path and load the model
     task_name = str(args_cli.task).split('-')[0]  # Stabilize, SwingUp
-    Algorithm_name = "DQN"  
-    episode = 0
-    q_value_file = f"{Algorithm_name}_{episode}_{num_of_action}_{action_range[1]}.json"
-    full_path = os.path.join(f"w/{task_name}", Algorithm_name)
-    agent.load_w(full_path, q_value_file)
+    
+    if args_cli.model_path:
+        model_path = args_cli.model_path
+        if os.path.isfile(model_path):
+            model_dir, model_file = os.path.split(model_path)
+        else:
+            model_dir = model_path
+            # Find the latest model file in the directory
+            model_files = [f for f in os.listdir(model_dir) if f.startswith(f"{algorithm_name}_") and f.endswith(".json")]
+            if not model_files:
+                raise ValueError(f"No model files found in {model_dir}")
+            model_files.sort()
+            model_file = model_files[-1]  # Get the last file (assuming naming convention with episode numbers)
+    else:
+        model_dir = os.path.join(f"w/{task_name}", algorithm_name)
+        # Find the latest model file in the directory
+        if os.path.exists(model_dir):
+            model_files = [f for f in os.listdir(model_dir) if f.startswith(f"{algorithm_name}_") and f.endswith(".json")]
+            if model_files:
+                model_files.sort()
+                model_file = model_files[-1]
+            else:
+                raise ValueError(f"No model files found in {model_dir}")
+        else:
+            raise ValueError(f"Model directory {model_dir} not found")
+    
+    # Load the model
+    full_path = os.path.join(model_dir, model_file)
+    print(f"Loading model from: {full_path}")
+    
+    if algorithm_name in ["DQN", "Linear_Q"]:
+        agent.load_w(model_dir, model_file)
+    # For neural network models like Actor-Critic and REINFORCE, loading would require implementing 
+    # specific load methods in those classes
 
     # reset environment
     obs, _ = env.reset()
     timestep = 0
+    
+    # For collecting performance data
+    episode_rewards = []
+    episode_lengths = []
+    
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
         with torch.inference_mode():
-        
             for episode in range(n_episodes):
                 obs, _ = env.reset()
                 done = False
+                episode_reward = 0
+                episode_steps = 0
+                print(f"Episode {episode+1}/{n_episodes}")
 
                 while not done:
-                    # agent stepping
-                    action, action_idx = agent.get_action(obs)
+                    # agent stepping (adjusting for different action selection methods)
+                    if algorithm_name == "AC":  # Actor-Critic has a different action selection method
+                        action, _ = agent.select_action(obs, noise=-0.1)  # Use negative noise as a flag for evaluation
+                    else:
+                        action, action_idx = agent.get_action(obs)
 
                     # env stepping
                     next_obs, reward, terminated, truncated, _ = env.step(action)
 
+                    # Update tracking variables
+                    episode_reward += reward.item()
+                    episode_steps += 1
+                    
+                    # Print progress
+                    if episode_steps % 10 == 0:
+                        print(f"  Step: {episode_steps}, Reward: {episode_reward:.2f}")
+                    
                     done = terminated or truncated
                     obs = next_obs
+                
+                # Record episode statistics
+                episode_rewards.append(episode_reward)
+                episode_lengths.append(episode_steps)
+                print(f"Episode {episode+1} finished with reward {episode_reward:.2f} in {episode_steps} steps")
+        
+            # Print summary statistics
+            print("\nPlay Summary:")
+            print(f"Average Reward: {np.mean(episode_rewards):.2f}±{np.std(episode_rewards):.2f}")
+            print(f"Average Episode Length: {np.mean(episode_lengths):.2f}±{np.std(episode_lengths):.2f}")
+            print(f"Min/Max Reward: {min(episode_rewards):.2f}/{max(episode_rewards):.2f}")
             
-        if args_cli.video:
-            timestep += 1
-            # Exit the play loop after recording one video
-            if timestep == args_cli.video_length:
-                break
-
-        break
+            # Plot results
+            plt.figure(figsize=(12, 6))
+            
+            plt.subplot(1, 2, 1)
+            plt.plot(episode_rewards)
+            plt.title('Episode Rewards')
+            plt.xlabel('Episode')
+            plt.ylabel('Reward')
+            plt.grid(True, alpha=0.3)
+            
+            plt.subplot(1, 2, 2)
+            plt.plot(episode_lengths)
+            plt.title('Episode Lengths')
+            plt.xlabel('Episode')
+            plt.ylabel('Steps')
+            plt.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            
+            # Save the figure
+            os.makedirs("play_results", exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            plt.savefig(f"play_results/{algorithm_name}_{task_name}_{timestamp}.png")
+            plt.show()
+            
+            if args_cli.video:
+                timestep += 1
+                # Exit the play loop after recording one video
+                if timestep == args_cli.video_length:
+                    break
+            
+            break
     # ==================================================================== #
 
     # close the simulator
