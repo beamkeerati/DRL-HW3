@@ -10,7 +10,8 @@ from isaaclab.app import AppLauncher
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from RL_Algorithm.Function_Aproximation.DQN import DQN
+# Fix the import path
+from RL_Algorithm.Function_based.DQN import DQN
 
 from tqdm import tqdm
 
@@ -99,19 +100,20 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ==================================================================== #
     # ========================= Can be modified ========================== #
 
-    # hyperparameters
-    num_of_action = None
-    action_range = [None, None]  
-    learning_rate = None
-    hidden_dim = None
-    n_episodes = None
-    initial_epsilon = None
-    epsilon_decay = None  
-    final_epsilon = None
-    discount = None
-    buffer_size = None
-    batch_size = None
-
+    # hyperparameters - MUST MATCH train.py values
+    num_of_action = 2                     # two discrete actions (e.g., push left or push right)
+    action_range = [-2.5, 2.5]            # continuous force range corresponding to actions
+    learning_rate = 1e-3                  # learning rate for optimizer
+    hidden_dim = 64                       # number of neurons in the hidden layer
+    n_episodes = 10                       # number of episodes to play (can be small for evaluation)
+    initial_epsilon = 0.01                # LOW exploration during evaluation
+    epsilon_decay = 0.0                   # No decay during evaluation
+    final_epsilon = 0.01                  # Fixed low exploration for evaluation
+    discount = 0.95                       # discount factor for future rewards
+    buffer_size = 10000                   # replay buffer capacity
+    batch_size = 64                       # minibatch size for experience replay
+    dropout = 0.2                         # dropout rate
+    tau = 0.005                           # soft update parameter
 
     # set up matplotlib
     is_ipython = 'inline' in matplotlib.get_backend()
@@ -129,48 +131,110 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     print("device: ", device)
 
+    # Initialize agent with the same parameters
     agent = DQN(
         device=device,
         num_of_action=num_of_action,
         action_range=action_range,
-        learning_rate=learning_rate,
+        n_observations=4,  # Cart-pole has 4 state variables
         hidden_dim=hidden_dim,
-        initial_epsilon = initial_epsilon,
-        epsilon_decay = epsilon_decay,
-        final_epsilon = final_epsilon,
-        discount_factor = discount,
-        buffer_size = buffer_size,
-        batch_size = batch_size,
+        dropout=dropout,
+        learning_rate=learning_rate,
+        tau=tau,
+        initial_epsilon=initial_epsilon,
+        epsilon_decay=epsilon_decay,
+        final_epsilon=final_epsilon,
+        discount_factor=discount,
+        buffer_size=buffer_size,
+        batch_size=batch_size,
     )
 
     task_name = str(args_cli.task).split('-')[0]  # Stabilize, SwingUp
     Algorithm_name = "DQN"  
-    episode = 0
+    episode = "final"  # Load the episode 0 model (or you can change to load a different episode)
+    
+    # Use EXACTLY the same naming convention as in train.py
     q_value_file = f"{Algorithm_name}_{episode}_{num_of_action}_{action_range[1]}.json"
     full_path = os.path.join(f"w/{task_name}", Algorithm_name)
-    agent.load_w(full_path, q_value_file)
+    
+    print(f"Loading model from: {os.path.join(full_path, q_value_file)}")
+    
+    try:
+        agent.load_w(full_path, q_value_file)
+        print("Model loaded successfully!")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        # List available files to help debugging
+        if os.path.exists(full_path):
+            files = os.listdir(full_path)
+            print(f"Available files in {full_path}:")
+            for file in files:
+                print(f"  - {file}")
+        else:
+            print(f"Directory {full_path} does not exist. Train a model first.")
+            return
 
     # reset environment
     obs, _ = env.reset()
     timestep = 0
+    
+    # Statistics tracking
+    episode_rewards = []
+    episode_lengths = []
+    
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
         with torch.inference_mode():
-        
             for episode in range(n_episodes):
                 obs, _ = env.reset()
                 done = False
+                episode_reward = 0.0  # Initialize as float
+                episode_length = 0
 
                 while not done:
-                    # agent stepping
-                    action, action_idx = agent.get_action(obs)
-
-                    # env stepping
-                    next_obs, reward, terminated, truncated, _ = env.step(action)
-
+                    # Get action with minimal exploration
+                    action_tensor = agent.select_action(obs)
+                    action_cont = action_tensor.to(device)
+                    
+                    # Ensure action has correct shape
+                    if action_cont.dim() == 0:
+                        action_cont = action_cont.view(1, 1)
+                    elif action_cont.dim() == 1:
+                        action_cont = action_cont.unsqueeze(0)
+                        
+                    # Step the environment
+                    next_obs, reward, terminated, truncated, _ = env.step(action_cont)
+                    
+                    # Convert tensor to float if needed
+                    if isinstance(reward, torch.Tensor):
+                        reward_value = reward.item()
+                    else:
+                        reward_value = float(reward)
+                        
+                    # Update statistics
+                    episode_reward += reward_value
+                    episode_length += 1
+                    
+                    # Check if done
                     done = terminated or truncated
                     obs = next_obs
+                
+                # Log episode results
+                print(f"Episode {episode+1}/{n_episodes}: Reward = {episode_reward:.4f}, Length = {episode_length}")
+                episode_rewards.append(episode_reward)
+                episode_lengths.append(episode_length)
+            
+            # Display summary statistics
+            if episode_rewards:
+                # Convert all values to native Python floats
+                float_rewards = [float(r) for r in episode_rewards]
+                avg_reward = sum(float_rewards) / len(float_rewards)
+                avg_length = sum(episode_lengths) / len(episode_lengths)
+                
+                print(f"\nAverage over {n_episodes} episodes:")
+                print(f"  Average Reward: {avg_reward:.4f}")
+                print(f"  Average Episode Length: {avg_length:.2f}")
             
         if args_cli.video:
             timestep += 1

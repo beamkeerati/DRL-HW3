@@ -111,7 +111,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     writer = SummaryWriter(log_dir)
     print(f"TensorBoard logs will be saved to: {log_dir}")
 
-    # hyperparameters
+    # hyperparameters - EXACTLY MATCH WHAT PLAY.PY EXPECTS
     num_of_action = 2                     # two discrete actions (e.g., push left or push right)
     action_range = [-2.5, 2.5]            # continuous force range corresponding to actions
     learning_rate = 1e-3                  # learning rate for optimizer
@@ -163,7 +163,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     print(f"Training with algorithm: {algorithm_name}")
     print(f"Device: {device}")
 
-    # Create directory for saving model checkpoints
+    # Create directory for saving model checkpoints - MATCH THE PLAY.PY EXPECTED PATH
     save_dir = os.path.join(f"w/{task_name}", algorithm_name)
     os.makedirs(save_dir, exist_ok=True)
 
@@ -278,11 +278,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 print(f"  Epsilon: {epsilon_value:.4f}")
                 print(f"  Duration: {episode_duration:.2f}s")
             
-            # Save model periodically
+            # Save model periodically with EXACT naming format that play.py expects
             if episode % 100 == 0 or episode == n_episodes - 1:
-                model_file = f"{algorithm_name}_ep{episode}.json"
+                model_file = f"{algorithm_name}_{episode}_{num_of_action}_{action_range[1]}.json"
                 agent.save_w(save_dir, model_file)
                 print(f"Model checkpoint saved: {model_file}")
+            
+            # Always save a checkpoint at episode 0 (this is what play.py expects by default)
+            if episode == 0:
+                model_file = f"{algorithm_name}_0_{num_of_action}_{action_range[1]}.json"
+                agent.save_w(save_dir, model_file)
+                print(f"Initial model saved: {model_file}")
 
         # Training completed
         training_time = time.time() - start_time
@@ -331,12 +337,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         plt.savefig(os.path.join(log_dir, 'learning_curves.png'))
         
         # Save the final model
-        final_model_file = f"{algorithm_name}_final.json"
+        final_model_file = f"{algorithm_name}_final_{num_of_action}_{action_range[1]}.json"
         agent.save_w(save_dir, final_model_file)
         
         print("\n===== Training Complete =====")
         print(f"Total training time: {training_time:.2f} seconds")
-        print(f"Final model saved as: {final_model_file}")
         print(f"TensorBoard logs saved to: {log_dir}")
         print("\nTo view training metrics, run:")
         print(f"  tensorboard --logdir={log_dir}")
