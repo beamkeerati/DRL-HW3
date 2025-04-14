@@ -89,8 +89,6 @@ class DQN(BaseAlgorithm):
         self.steps_done = 0
         self.num_of_action = num_of_action
         self.tau = tau
-        self.batch_size = batch_size  # Store batch_size as instance attribute
-        self.n_observations = n_observations  # Store observation dimension
 
         self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=learning_rate, amsgrad=True)
 
@@ -108,32 +106,13 @@ class DQN(BaseAlgorithm):
             buffer_size=buffer_size,
             batch_size=batch_size,
         )
-    
-    def preprocess_observation(self, obs):
-        """
-        Process observation to ensure it's in the correct format for the neural network.
-        """
-        if isinstance(obs, dict):
-            if 'policy' in obs:
-                # If observation contains a policy field with tensor
-                if isinstance(obs['policy'], torch.Tensor):
-                    return obs['policy'].to(self.device)
-                else:
-                    return torch.tensor(obs['policy'], dtype=torch.float32, device=self.device)
-            else:
-                # Extract relevant observation features
-                pose_cart = obs.get('pose_cart', 0.0)
-                pose_pole = obs.get('pose_pole', 0.0)
-                vel_cart = obs.get('vel_cart', 0.0)
-                vel_pole = obs.get('vel_pole', 0.0)
-                return torch.tensor([pose_cart, pose_pole, vel_cart, vel_pole], 
-                                dtype=torch.float32, device=self.device).unsqueeze(0)
-        elif not isinstance(obs, torch.Tensor):
-            # Convert numpy arrays or lists to tensor
-            return torch.tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
-        else:
-            # Return the tensor if it's already a tensor
-            return obs.to(self.device)
+
+        # set up matplotlib
+        self.is_ipython = 'inline' in matplotlib.get_backend()
+        if self.is_ipython:
+            from IPython import display
+
+        plt.ion()
 
     def select_action(self, state):
         """
@@ -146,15 +125,6 @@ class DQN(BaseAlgorithm):
             Tensor: The selected action.
         """
         # ========= put your code here ========= #
-        try:
-            print(f"DEBUG - State type: {type(state)}")
-            if isinstance(state, dict):
-                print(f"DEBUG - State keys: {state.keys()}")
-                if 'policy' in state:
-                    print(f"DEBUG - Policy type: {type(state['policy'])}")
-        except Exception as e:
-            print(f"DEBUG - Error inspecting state: {e}")
-            
         self.steps_done += 1
         # Epsilon-greedy action selection
         if random.random() < self.epsilon:
@@ -163,8 +133,11 @@ class DQN(BaseAlgorithm):
         else:
             # Exploit - best known action
             with torch.no_grad():
-                # Preprocess the state
-                state_tensor = self.preprocess_observation(state)
+                # Convert state to tensor and move to device
+                if not isinstance(state, torch.Tensor):
+                    state_tensor = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+                else:
+                    state_tensor = state.to(self.device)
                 
                 # Get action with highest Q-value
                 action_idx = self.policy_net(state_tensor).max(1)[1].item()
@@ -177,29 +150,6 @@ class DQN(BaseAlgorithm):
         
         return action, action_idx
         # ====================================== #
-
-    def q(self, obs, a=None):
-        """
-        Returns the Q-value for a given state and action using the neural network.
-        Overrides the BaseAlgorithm.q method for DQN.
-        
-        Args:
-            obs: The observation (state)
-            a: The action (optional)
-            
-        Returns:
-            Q-value(s) for the state-action pair(s)
-        """
-        # Process the observation
-        state_tensor = self.preprocess_observation(obs)
-
-        with torch.no_grad():
-            q_values = self.policy_net(state_tensor)[0].cpu().numpy()  # Added .cpu() before .numpy()
-
-        if a is None:
-            return q_values
-        else:
-            return q_values[a]
 
     def calculate_loss(self, non_final_mask, non_final_next_states, state_batch, action_batch, reward_batch):
         """
@@ -248,42 +198,38 @@ class DQN(BaseAlgorithm):
                 - reward_batch (Tensor): The batch of rewards received.
         """
         # Ensure there are enough samples in memory before proceeding
+        # ========= put your code here ========= #
         if len(self.memory) < batch_size:
             return None
-
+        # ====================================== #
+        
         # Sample a batch from memory
+        # ========= put your code here ========= #
         sample = self.memory.sample()
         if sample is None:
             return None
-
+            
         states, actions, rewards, next_states, dones = sample
-
-        # Process each state and next_state to handle different observation formats
-        processed_states = []
-        processed_next_states = []
-
-        for state in states:
-            processed_state = self.preprocess_observation(state).squeeze(0)
-            processed_states.append(processed_state)
-
-        for next_state in next_states:
-            processed_next_state = self.preprocess_observation(next_state).squeeze(0)
-            processed_next_states.append(processed_next_state)
-
-        # Stack the processed states
-        state_batch = torch.stack(processed_states)
+        
+        # Convert to tensors
+        state_batch = torch.tensor(np.array(states), dtype=torch.float32, device=self.device)
         action_batch = torch.tensor(actions, dtype=torch.long, device=self.device).unsqueeze(1)
         reward_batch = torch.tensor(rewards, dtype=torch.float32, device=self.device).unsqueeze(1)
-
-        # Create mask of non-final states and stack non-final next states
-        non_final_mask = torch.tensor([not done for done in dones], dtype=torch.bool, device=self.device)
-
-        # Only stack non-final next states if there are any
-        if any(~np.array(dones)):
-            non_final_next_states = torch.stack([processed_next_states[i] for i in range(len(next_states)) if not dones[i]])
-        else:
-            non_final_next_states = torch.tensor([], device=self.device)
-
+        
+        # Create mask of non-final states
+        non_final_mask = torch.tensor(
+            [not done for done in dones], 
+            dtype=torch.bool, 
+            device=self.device
+        )
+        
+        # Get only the non-final next states
+        non_final_next_states = torch.tensor(
+            [next_states[i] for i in range(len(next_states)) if not dones[i]], 
+            dtype=torch.float32, 
+            device=self.device
+        )
+        
         return non_final_mask, non_final_next_states, state_batch, action_batch, reward_batch
         # ====================================== #
 
@@ -336,77 +282,88 @@ class DQN(BaseAlgorithm):
         # ========= put your code here ========= #
         self.target_net.load_state_dict(target_net_state_dict)
         # ====================================== #
-        
-    def load_w(self, path, filename):
+
+    def learn(self, env):
         """
-        Load weights from a JSON file.
-        Overrides the BaseAlgorithm.load_w method for DQN.
+        Train the agent on a single step.
+
+        Args:
+            env: The environment to train in.
         """
-        import os
-        import json
-        import numpy as np
-        
-        full_path = os.path.join(path, filename)
-        print(f"Loading weights from: {full_path}")
-        
-        try:
-            with open(full_path, 'r') as file:
-                data = json.load(file)
-                
-            if 'weights' in data:
-                # First, convert the weights to a numpy array
-                weights = np.array(data['weights'])
-                
-                # Initialize and load weights into the policy network
-                if weights.shape[0] == self.n_observations and weights.shape[1] == self.num_of_action:
-                    # Create initial input features based on observation space
-                    dummy_input = torch.zeros(1, self.n_observations, device=self.device)
-                    
-                    # Get output from policy network to initialize it
-                    _ = self.policy_net(dummy_input)
-                    
-                    print(f"Successfully loaded weights with shape {weights.shape}")
-                    
-                    # Store the weights for any methods that might use self.w directly
-                    self.w = weights
-                else:
-                    print(f"Warning: Weight dimensions {weights.shape} don't match expected dimensions ({self.n_observations}, {self.num_of_action})")
+
+        # ===== Initialize trajectory collection variables ===== #
+        # Reset environment to get initial state (tensor)
+        # Track total episode return (float)
+        # Flag to indicate episode termination (boolean)
+        # Step counter (int)
+        # ========= put your code here ========= #
+        state, _ = env.reset()
+        total_reward = 0
+        done = False
+        timestep = 0
+        # ====================================== #
+
+        while not done:
+            # Predict action from the policy network
+            # ========= put your code here ========= #
+            action, action_idx = self.select_action(state)
+            # ====================================== #
+
+            # Execute action in the environment and observe next state and reward
+            # ========= put your code here ========= #
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+            reward_value = reward.item()
+            # ====================================== #
+
+            # Store the transition in memory
+            # ========= put your code here ========= #
+            self.memory.add(state, action_idx, reward_value, next_state, done)
+            # ====================================== #
+
+            # Update state
+            state = next_state
+            total_reward += reward_value
+            timestep += 1
+
+            # Perform one step of the optimization (on the policy network)
+            self.update_policy()
+
+            # Soft update of the target network's weights
+            self.update_target_networks()
+
+            if done:
+                self.plot_durations(timestep)
+                break
+
+    # Consider modifying this function to visualize other aspects of the training process.
+    # ================================================================================== #
+    def plot_durations(self, timestep=None, show_result=False):
+        if timestep is not None:
+            self.episode_durations.append(timestep)
+
+        plt.figure(1)
+        durations_t = torch.tensor(self.episode_durations, dtype=torch.float)
+        if show_result:
+            plt.title('Result')
+        else:
+            plt.clf()
+            plt.title('Training...')
+        plt.xlabel('Episode')
+        plt.ylabel('Duration')
+        plt.plot(durations_t.numpy())
+        # Take 100 episode averages and plot them too
+        if len(durations_t) >= 100:
+            means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
+            means = torch.cat((torch.zeros(99), means))
+            plt.plot(means.numpy())
+
+        plt.pause(0.001)  # pause a bit so that plots are updated
+        if self.is_ipython:
+            if not show_result:
+                from IPython import display
+                display.display(plt.gcf())
+                display.clear_output(wait=True)
             else:
-                print("Warning: The loaded data does not contain 'weights'")
-        except FileNotFoundError:
-            print(f"Warning: File not found: {full_path}")
-        except json.JSONDecodeError:
-            print(f"Warning: Error decoding JSON from file: {full_path}")
-        except Exception as e:
-            print(f"Error loading weights: {e}")
-            
-    def save_w(self, path, filename):
-        """
-        Save weights to a JSON file.
-        Overrides the BaseAlgorithm.save_w method for DQN.
-        """
-        import os
-        import json
-        
-        os.makedirs(path, exist_ok=True)
-        full_path = os.path.join(path, filename)
-        
-        # Extract weights from the policy network
-        weights = []
-        for i in range(self.n_observations):
-            row = []
-            for j in range(self.num_of_action):
-                row.append(0.0)  # Initialize with zeros
-            weights.append(row)
-            
-        # Convert to proper format for saving
-        model_params = {
-            'weights': weights
-        }
-        
-        try:
-            with open(full_path, 'w') as f:
-                json.dump(model_params, f)
-            print(f"Saved weights to: {full_path}")
-        except Exception as e:
-            print(f"Error saving weights: {e}")
+                display.display(plt.gcf())
+    # ================================================================================== #
