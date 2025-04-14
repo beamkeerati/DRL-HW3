@@ -1,315 +1,303 @@
-from __future__ import annotations
-import numpy as np
-from RL_Algorithm.RL_base_function import BaseAlgorithm
-
-
+import random
+from collections import deque, namedtuple
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-import torch.distributions as distributions
-from collections import namedtuple, deque
-import random
-import matplotlib
-import matplotlib.pyplot as plt
+import numpy as np
+from torch.distributions.normal import Normal
+from torch.nn.functional import mse_loss
+from RL_Algorithm.RL_base_function import BaseAlgorithm
 
-class MC_REINFORCE_network(nn.Module):
-    """
-    Neural network for the MC_REINFORCE algorithm.
-    
-    Args:
-        n_observations (int): Number of input features.
-        hidden_size (int): Number of hidden neurons.
-        n_actions (int): Number of possible actions.
-        dropout (float): Dropout rate for regularization.
-    """
+class Actor(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, learning_rate=1e-4):
+        """
+        Actor network for policy approximation.
 
-    def __init__(self, n_observations, hidden_size, n_actions, dropout):
-        super(MC_REINFORCE_network, self).__init__()
+        Args:
+            input_dim (int): Dimension of the state space.
+            hidden_dim (int): Number of hidden units in layers.
+            output_dim (int): Dimension of the action space.
+            learning_rate (float, optional): Learning rate for optimization. Defaults to 1e-4.
+        """
+        super(Actor, self).__init__()
+
         # ========= put your code here ========= #
-        self.layer1 = nn.Linear(n_observations, hidden_size)
-        self.dropout1 = nn.Dropout(dropout)
-        self.layer2 = nn.Linear(hidden_size, hidden_size)
-        self.dropout2 = nn.Dropout(dropout)
-        self.layer3 = nn.Linear(hidden_size, n_actions)
+        pass
         # ====================================== #
 
-    def forward(self, x):
+    def init_weights(self):
         """
-        Forward pass through the network.
-        
+        Initialize network weights using Xavier initialization for better convergence.
+        """
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)  # Xavier initialization
+                nn.init.zeros_(m.bias)  # Initialize bias to 0
+
+    def forward(self, state):
+        """
+        Forward pass for action selection.
+
         Args:
-            x (Tensor): Input tensor.
-        
+            state (Tensor): Current state of the environment.
+
         Returns:
-            Tensor: Output tensor representing action probabilities.
+            Tensor: Selected action values.
         """
         # ========= put your code here ========= #
-        x = F.relu(self.layer1(x))
-        x = self.dropout1(x)
-        x = F.relu(self.layer2(x))
-        x = self.dropout2(x)
-        x = self.layer3(x)
-        return F.softmax(x, dim=-1)
+        pass
         # ====================================== #
 
-class MC_REINFORCE(BaseAlgorithm):
-    def __init__(
-            self,
-            device = None,
-            num_of_action: int = 2,
-            action_range: list = [-2.5, 2.5],
-            n_observations: int = 4,
-            hidden_dim: int = 64,
-            dropout: float = 0.5,
-            learning_rate: float = 0.01,
-            discount_factor: float = 0.95,
-    ) -> None:
+class Critic(nn.Module):
+    def __init__(self, state_dim, action_dim, hidden_dim, learning_rate=1e-4):
         """
-        Initialize the CartPole Agent.
+        Critic network for Q-value approximation.
 
         Args:
-            learning_rate (float): The learning rate for updating Q-values.
-            initial_epsilon (float): The initial exploration rate.
-            epsilon_decay (float): The rate at which epsilon decays over time.
-            final_epsilon (float): The final exploration rate.
-            discount_factor (float, optional): The discount factor for future rewards. Defaults to 0.95.
-        """     
+            state_dim (int): Dimension of the state space.
+            action_dim (int): Dimension of the action space.
+            hidden_dim (int): Number of hidden units in layers.
+            learning_rate (float, optional): Learning rate for optimization. Defaults to 1e-4.
+        """
+        super(Critic, self).__init__()
 
+        # ========= put your code here ========= #
+        pass
+        # ====================================== #
+
+    def init_weights(self):
+        """
+        Initialize network weights using Kaiming initialization.
+        """
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')  # Kaiming initialization
+                nn.init.zeros_(m.bias)  # Initialize bias to 0
+
+    def forward(self, state, action):
+        """
+        Forward pass for Q-value estimation.
+
+        Args:
+            state (Tensor): Current state of the environment.
+            action (Tensor): Action taken by the agent.
+
+        Returns:
+            Tensor: Estimated Q-value.
+        """
+        # ========= put your code here ========= #
+        pass
+        # ====================================== #
+
+class Actor_Critic(BaseAlgorithm):
+    def __init__(self, 
+                device = None, 
+                num_of_action: int = 2,
+                action_range: list = [-2.5, 2.5],
+                n_observations: int = 4,
+                hidden_dim = 256,
+                dropout = 0.05, 
+                learning_rate: float = 0.01,
+                tau: float = 0.005,
+                discount_factor: float = 0.95,
+                buffer_size: int = 256,
+                batch_size: int = 1,
+                ):
+        """
+        Actor-Critic algorithm implementation.
+
+        Args:
+            device (str): Device to run the model on ('cpu' or 'cuda').
+            num_of_action (int, optional): Number of possible actions. Defaults to 2.
+            action_range (list, optional): Range of action values. Defaults to [-2.5, 2.5].
+            n_observations (int, optional): Number of observations in state. Defaults to 4.
+            hidden_dim (int, optional): Hidden layer dimension. Defaults to 256.
+            learning_rate (float, optional): Learning rate. Defaults to 0.01.
+            tau (float, optional): Soft update parameter. Defaults to 0.005.
+            discount_factor (float, optional): Discount factor for Q-learning. Defaults to 0.95.
+            batch_size (int, optional): Size of training batches. Defaults to 1.
+            buffer_size (int, optional): Replay buffer size. Defaults to 256.
+        """
         # Feel free to add or modify any of the initialized variables above.
         # ========= put your code here ========= #
-        self.LR = learning_rate
-
-        self.policy_net = MC_REINFORCE_network(n_observations, hidden_dim, num_of_action, dropout).to(device)
-        self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=learning_rate)
-
         self.device = device
-        self.steps_done = 0
+        self.actor = Actor(n_observations, hidden_dim, num_of_action, learning_rate).to(device)
+        self.actor_target = Actor(n_observations, hidden_dim, num_of_action, learning_rate).to(device)
+        self.critic = Critic(n_observations, num_of_action, hidden_dim, learning_rate).to(device)
+        self.critic_target = Critic(n_observations, num_of_action, hidden_dim, learning_rate).to(device)
 
-        self.episode_durations = []
+        self.batch_size = batch_size
+        self.tau = tau
+        self.discount_factor = discount_factor
+
+        self.update_target_networks(tau=1)  # initialize target networks
+
+        # Experiment with different values and configurations to see how they affect the training process.
+        # Remember to document any changes you make and analyze their impact on the agent's performance.
+
+        pass
         # ====================================== #
 
-        super(MC_REINFORCE, self).__init__(
+        super(Actor_Critic, self).__init__(
             num_of_action=num_of_action,
             action_range=action_range,
             learning_rate=learning_rate,
             discount_factor=discount_factor,
+            buffer_size=buffer_size,
+            batch_size=batch_size,
         )
 
-        # set up matplotlib
-        self.is_ipython = 'inline' in matplotlib.get_backend()
-        if self.is_ipython:
-            from IPython import display
-
-        plt.ion()
-    
-    def calculate_stepwise_returns(self, rewards):
+    def select_action(self, state, noise=0.0):
         """
-        Compute stepwise returns for the trajectory.
-
-        Args:
-            rewards (list): List of rewards obtained in the episode.
+        Selects an action based on the current policy with optional exploration noise.
         
+        Args:
+        state (Tensor): The current state of the environment.
+        noise (float, optional): The standard deviation of noise for exploration. Defaults to 0.0.
+
         Returns:
-            Tensor: Normalized stepwise returns.
+            Tuple[Tensor, Tensor]: 
+                - scaled_action: The final action after scaling.
+                - clipped_action: The action before scaling but after noise adjustment.
         """
         # ========= put your code here ========= #
-        # Calculate discounted returns
-        returns = []
-        G = 0
-        
-        # Calculate returns in reverse order
-        for r in reversed(rewards):
-            G = r + self.discount_factor * G
-            returns.insert(0, G)  # Insert at the beginning
-            
-        # Convert to tensor
-        returns = torch.tensor(returns, device=self.device)
-        
-        # Normalize returns for stability
-        if len(returns) > 1:
-            returns = (returns - returns.mean()) / (returns.std() + 1e-8)
-            
-        return returns
+        pass
         # ====================================== #
     
-    def generate_trajectory(self, env):
+    def generate_sample(self, batch_size):
         """
-        Generate a trajectory by interacting with the environment.
+        Generates a batch sample from memory for training.
+
+        Returns:
+            Tuple: A tuple containing:
+                - state_batch (Tensor): The batch of current states.
+                - action_batch (Tensor): The batch of actions taken.
+                - reward_batch (Tensor): The batch of rewards received.
+                - next_state_batch (Tensor): The batch of next states received.
+                - done_batch (Tensor): The batch of dones received.
+        """
+        # Ensure there are enough samples in memory before proceeding
+        # ========= put your code here ========= #
+        # Sample a batch from memory
+        batch = self.memory.sample()
+        # ====================================== #
+        
+        # Sample a batch from memory
+        # ========= put your code here ========= #
+        pass
+        # ====================================== #
+
+    def calculate_loss(self, states, actions, rewards, next_states, dones):
+        """
+        Computes the loss for policy optimization.
 
         Args:
-            env: The environment object.
-        
+            - states (Tensor): The batch of current states.
+            - actions (Tensor): The batch of actions taken.
+            - rewards (Tensor): The batch of rewards received.
+            - next_states (Tensor): The batch of next states received.
+            - dones (Tensor): The batch of dones received.
+
         Returns:
-            Tuple: (episode_return, stepwise_returns, log_prob_actions, trajectory)
-        """
-        # ===== Initialize trajectory collection variables ===== #
-        # Reset environment to get initial state (tensor)
-        # Store state-action-reward history (list)
-        # Store log probabilities of actions (list)
-        # Store rewards at each step (list)
-        # Track total episode return (float)
-        # Flag to indicate episode termination (boolean)
-        # Step counter (int)
-        # ========= put your code here ========= #
-        # Reset environment
-        state, _ = env.reset()
-        
-        # Initialize trajectory variables
-        trajectory = []
-        log_prob_actions = []
-        rewards = []
-        episode_return = 0
-        done = False
-        timestep = 0
-        # ====================================== #
-        
-        # ===== Collect trajectory through agent-environment interaction ===== #
-        while not done:
-            
-            # Predict action from the policy network
-            # ========= put your code here ========= #
-            # Convert state to tensor
-            state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
-            
-            # Get action probabilities from policy network
-            action_probs = self.policy_net(state_tensor)
-            
-            # Create a distribution and sample action
-            dist = distributions.Categorical(action_probs)
-            action_tensor = dist.sample()
-            
-            # Get log probability of the action
-            log_prob = dist.log_prob(action_tensor)
-            
-            # Convert to action and scale
-            action_idx = action_tensor.item()
-            action = self.scale_action(action_idx)
-            # ====================================== #
-
-            # Execute action in the environment and observe next state and reward
-            # ========= put your code here ========= #
-            next_state, reward, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
-            reward_value = reward.item()
-            # ====================================== #
-
-            # Store action log probability reward and trajectory history
-            # ========= put your code here ========= #
-            log_prob_actions.append(log_prob)
-            rewards.append(reward_value)
-            trajectory.append((state, action_idx, reward_value, next_state, done))
-            
-            # Update tracking variables
-            episode_return += reward_value
-            state = next_state
-            timestep += 1
-            # ====================================== #
-
-            if done:
-                self.plot_durations(timestep)
-                break
-
-        # ===== Stack log_prob_actions &  stepwise_returns ===== #
-        # ========= put your code here ========= #
-        # Calculate stepwise returns
-        stepwise_returns = self.calculate_stepwise_returns(rewards)
-        
-        # Stack log probabilities
-        log_prob_actions = torch.cat([lp.unsqueeze(0) for lp in log_prob_actions])
-        
-        return episode_return, stepwise_returns, log_prob_actions, trajectory
-        # ====================================== #
-    
-    def calculate_loss(self, stepwise_returns, log_prob_actions):
-        """
-        Compute the loss for policy optimization.
-
-        Args:
-            stepwise_returns (Tensor): Stepwise returns for the trajectory.
-            log_prob_actions (Tensor): Log probabilities of actions taken.
-        
-        Returns:
-            Tensor: Computed loss.
+            Tensor: Computed critic & actor loss.
         """
         # ========= put your code here ========= #
-        # Policy gradient loss: -log_prob * return
-        policy_gradient = -log_prob_actions * stepwise_returns
-        
-        # Mean loss over the trajectory
-        loss = policy_gradient.mean()
-        
-        return loss
+        # Update Critic
+
+        # Gradient clipping for critic
+
+        # Update Actor
+
+        # Gradient clipping for actor
+
+        pass
         # ====================================== #
 
-    def update_policy(self, stepwise_returns, log_prob_actions):
+    def update_policy(self):
         """
         Update the policy using the calculated loss.
 
-        Args:
-            stepwise_returns (Tensor): Stepwise returns.
-            log_prob_actions (Tensor): Log probabilities of actions taken.
-        
         Returns:
             float: Loss value after the update.
         """
         # ========= put your code here ========= #
-        # Calculate loss
-        loss = self.calculate_loss(stepwise_returns, log_prob_actions)
+        sample = self.generate_sample(self.batch_size)
+        if sample is None:
+            return
+        states, actions, rewards, next_states, dones = sample
+
+        # Normalize rewards (optional but often helpful)
+        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
+
+        # Compute critic and actor loss
+        critic_loss, actor_loss = self.calculate_loss(states, actions, rewards, next_states, dones)
         
-        # Optimize the model
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        
-        return loss.item()
+        # Backpropagate and update critic network parameters
+
+        # Backpropagate and update actor network parameters
         # ====================================== #
-    
-    def learn(self, env):
+
+
+    def update_target_networks(self, tau=None):
         """
-        Train the agent on a single episode.
+        Perform soft update of target networks using Polyak averaging.
 
         Args:
-            env: The environment to train in.
-        
-        Returns:
-            Tuple: (episode_return, loss, trajectory)
+            tau (float, optional): Update rate. Defaults to self.tau.
         """
         # ========= put your code here ========= #
-        self.policy_net.train()
-        episode_return, stepwise_returns, log_prob_actions, trajectory = self.generate_trajectory(env)
-        loss = self.update_policy(stepwise_returns, log_prob_actions)
-        return episode_return, loss, trajectory
+        pass
         # ====================================== #
 
+    def learn(self, env, max_steps, num_agents, noise_scale=0.1, noise_decay=0.99):
+        """
+        Train the agent on a single step.
 
-    # Consider modifying this function to visualize other aspects of the training process.
-    # ================================================================================== #
-    def plot_durations(self, timestep=None, show_result=False):
-        if timestep is not None:
-            self.episode_durations.append(timestep)
+        Args:
+            env: The environment in which the agent interacts.
+            max_steps (int): Maximum number of steps per episode.
+            num_agents (int): Number of agents in the environment.
+            noise_scale (float, optional): Initial exploration noise level. Defaults to 0.1.
+            noise_decay (float, optional): Factor by which noise decreases per step. Defaults to 0.99.
+        """
 
-        plt.figure(1)
-        durations_t = torch.tensor(self.episode_durations, dtype=torch.float)
-        if show_result:
-            plt.title('Result')
-        else:
-            plt.clf()
-            plt.title('Training...')
-        plt.xlabel('Episode')
-        plt.ylabel('Duration')
-        plt.plot(durations_t.numpy())
-        # Take 100 episode averages and plot them too
-        if len(durations_t) >= 100:
-            means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-            means = torch.cat((torch.zeros(99), means))
-            plt.plot(means.numpy())
+        # ===== Initialize trajectory collection variables ===== #
+        # Reset environment to get initial state (tensor)
+        # Track total episode return (float)
+        # Flag to indicate episode termination (boolean)
+        # Step counter (int)
+        # ========= put your code here ========= #
+        pass
+        # ====================================== #
 
-        plt.pause(0.001)  # pause a bit so that plots are updated
-        if self.is_ipython:
-            if not show_result:
-                display.display(plt.gcf())
-                display.clear_output(wait=True)
+        for step in range(max_steps):
+            # Predict action from the policy network
+            # ========= put your code here ========= #
+            pass
+            # ====================================== #
+
+            # Execute action in the environment and observe next state and reward
+            # ========= put your code here ========= #
+            pass
+            # ====================================== #
+
+            # Store the transition in memory
+            # ========= put your code here ========= #
+            # Parallel Agents Training
+            if num_agents > 1:
+                pass
+            # Single Agent Training
             else:
-                display.display(plt.gcf())
-    # ================================================================================== #
+                pass
+            # ====================================== #
+
+            # Update state
+
+            # Decay the noise to gradually shift from exploration to exploitation
+
+
+            # Perform one step of the optimization (on the policy network)
+            self.update_policy()
+
+            # Update target networks
+            self.update_target_networks()

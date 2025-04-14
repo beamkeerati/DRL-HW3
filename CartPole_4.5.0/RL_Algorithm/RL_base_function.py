@@ -40,10 +40,6 @@ class ReplayBuffer:
             next_state (Tensor): The next state resulting from the action.
             done (bool): Whether the episode has terminated.
         """
-        # ========= put your code here ========= #
-        experience = (state, action, reward, next_state, done)
-        self.memory.append(experience)
-        # ====================================== #
 
     def sample(self):
         """
@@ -56,20 +52,6 @@ class ReplayBuffer:
             - next_state_batch: Batch of next states.
             - done_batch: Batch of terminal state flags.
         """
-        # ========= put your code here ========= #
-        if len(self.memory) < self.batch_size:
-            return None
-            
-        batch = random.sample(self.memory, self.batch_size)
-        
-        states = [item[0] for item in batch]
-        actions = [item[1] for item in batch]
-        rewards = [item[2] for item in batch]
-        next_states = [item[3] for item in batch]
-        dones = [item[4] for item in batch]
-        
-        return states, actions, rewards, next_states, dones
-        # ====================================== #
 
     def __len__(self):
         """
@@ -130,17 +112,12 @@ class BaseAlgorithm():
     def q(self, obs, a=None):
         """Returns the linearly-estimated Q-value for a given state and action."""
         # ========= put your code here ========= #
-        if a is None:
-            # Get q values from all actions in state
-            q_values = np.zeros(self.num_of_action)
-            for action in range(self.num_of_action):
-                features = np.array(obs)
-                q_values[action] = np.dot(features, self.w[:, action])
-            return q_values
+        if a==None:
+            # Get q values from all action in state
+            pass
         else:
             # Get q values given action & state
-            features = np.array(obs)
-            return np.dot(features, self.w[:, a])
+            pass
         # ====================================== #
         
     
@@ -156,14 +133,7 @@ class BaseAlgorithm():
             torch.Tensor: Scaled action tensor.
         """
         # ========= put your code here ========= #
-        action_min, action_max = self.action_range
-        
-        if self.num_of_action == 1:
-            continuous_value = (action_min + action_max) / 2.0
-        else:
-            continuous_value = action_min + (action / (self.num_of_action - 1)) * (action_max - action_min)
-        
-        return torch.tensor([[continuous_value]], dtype=torch.float32)
+        pass
         # ====================================== #
     
     def decay_epsilon(self):
@@ -171,7 +141,7 @@ class BaseAlgorithm():
         Decay epsilon value to reduce exploration over time.
         """
         # ========= put your code here ========= #
-        self.epsilon = max(self.final_epsilon, self.epsilon * self.epsilon_decay)
+        pass
         # ====================================== #
 
     def save_w(self, path, filename):
@@ -179,15 +149,7 @@ class BaseAlgorithm():
         Save weight parameters.
         """
         # ========= put your code here ========= #
-        os.makedirs(path, exist_ok=True)
-        full_path = os.path.join(path, filename)
-        
-        model_params = {
-            'weights': self.w.tolist()
-        }
-        
-        with open(full_path, 'w') as f:
-            json.dump(model_params, f)
+        pass
         # ====================================== #
             
     def load_w(self, path, filename):
@@ -195,18 +157,7 @@ class BaseAlgorithm():
         Load weight parameters.
         """
         # ========= put your code here ========= #
-        full_path = os.path.join(path, filename)
-        
-        try:
-            with open(full_path, 'r') as file:
-                data = json.load(file)
-                
-            if 'weights' in data:
-                self.w = np.array(data['weights'])
-            else:
-                raise KeyError("The loaded data does not contain weights.")
-        except FileNotFoundError:
-            print(f"Warning: File not found: {full_path}. Using default weights.")
-        except json.JSONDecodeError:
-            print(f"Warning: Error decoding JSON from file: {full_path}. Using default weights.")
+        pass
         # ====================================== #
+
+
