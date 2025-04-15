@@ -112,14 +112,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     print(f"TensorBoard logs will be saved to: {log_dir}")
 
     # hyperparameters - EXACTLY MATCH WHAT PLAY.PY EXPECTS
-    num_of_action = 2                     # two discrete actions (e.g., push left or push right)
+    num_of_action = 3                     # two discrete actions (e.g., push left or push right)
     action_range = [-2.5, 2.5]            # continuous force range corresponding to actions
     learning_rate = 1e-3                  # learning rate for optimizer
     hidden_dim = 64                       # number of neurons in the hidden layer
-    n_episodes = 1000                     # number of training episodes
+    n_episodes = 10000                     # number of training episodes
     initial_epsilon = 1.0                 # starting exploration rate
-    epsilon_decay = 0.001                 # epsilon decay per step (or per action)
-    final_epsilon = 0.001                 # minimum exploration rate
+    epsilon_decay = 0.99                 # epsilon decay per step (or per action)
+    final_epsilon = 0.05                 # minimum exploration rate
     discount = 0.95                       # discount factor for future rewards
     buffer_size = 10000                   # replay buffer capacity
     batch_size = 64                       # minibatch size for experience replay

@@ -156,10 +156,7 @@ class BaseAlgorithm():
         Decay epsilon value to reduce exploration over time.
         """
         # ========= put your code here ========= #
-        if self.epsilon > self.final_epsilon:
-            self.epsilon -= self.epsilon_decay
-            if self.epsilon < self.final_epsilon:
-                self.epsilon = self.final_epsilon
+        self.epsilon = max(self.final_epsilon, self.epsilon * self.epsilon_decay)
         # ====================================== #
 
     def save_w(self, path, filename):
