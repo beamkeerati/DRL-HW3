@@ -15,6 +15,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 from RL_Algorithm.Function_based.DQN import DQN
 from RL_Algorithm.Function_based.Linear_Q import Linear_QN
 from RL_Algorithm.Function_based.MC_REINFORCE import MC_REINFORCE
+from RL_Algorithm.Function_based.AC import Actor_Critic  # Import PPO (Actor-Critic)
 
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter  # TensorBoard logging
@@ -28,7 +29,7 @@ parser.add_argument("--num_envs", type=int, default=1, help="Number of environme
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
-parser.add_argument("--algorithm", type=str, default="DQN", choices=["DQN", "Linear_Q", "MC_REINFORCE"], help="Algorithm to use (DQN, Linear_Q, or MC_REINFORCE)")
+parser.add_argument("--algorithm", type=str, default="DQN", choices=["DQN", "Linear_Q", "MC_REINFORCE", "AC"], help="Algorithm to use (DQN, Linear_Q, MC_REINFORCE, or AC)")
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -130,6 +131,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     dropout = 0.2                         # dropout for regularization (DQN only)
     tau = 0.005                           # target network update rate (DQN only)
     
+    # PPO-specific hyperparameters
+    clip_ratio = 0.2                      # PPO clipping parameter
+    entropy_coef = 0.01                   # entropy bonus coefficient
+    value_coef = 0.5                      # value loss coefficient
+    update_epochs = 4                     # number of PPO epochs per update
+    gae_lambda = 0.95                     # GAE lambda parameter
+    
     # Log hyperparameters to TensorBoard
     hp_dict = {
         "algorithm": algorithm_name,
@@ -161,6 +169,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         hp_dict.update({
             "hidden_dim": hidden_dim,
             "dropout": dropout,
+        })
+    elif algorithm_name == "AC":  # For PPO
+        hp_dict.update({
+            "hidden_dim": hidden_dim,
+            "dropout": dropout,
+            "clip_ratio": clip_ratio,
+            "entropy_coef": entropy_coef,
+            "value_coef": value_coef,
+            "update_epochs": update_epochs,
+            "gae_lambda": gae_lambda,
         })
     
     for name, val in hp_dict.items():
@@ -235,6 +253,26 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             final_epsilon=0.0,    # Not used in REINFORCE
             buffer_size=buffer_size,
             batch_size=batch_size,
+        )
+    elif algorithm_name == "AC":
+        agent = Actor_Critic(
+            device=device,
+            num_of_action=num_of_action,
+            action_range=action_range,
+            n_observations=4,  # Cart-pole has 4 state variables
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+            learning_rate=learning_rate,
+            tau=tau,
+            discount_factor=discount,
+            buffer_size=buffer_size,
+            batch_size=batch_size,
+            # PPO-specific parameters
+            clip_ratio=clip_ratio,
+            entropy_coef=entropy_coef,
+            value_coef=value_coef,
+            update_epochs=update_epochs,
+            gae_lambda=gae_lambda,
         )
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm_name}")
