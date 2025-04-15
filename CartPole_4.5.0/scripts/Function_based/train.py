@@ -13,6 +13,7 @@ from isaaclab.app import AppLauncher
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from RL_Algorithm.Function_based.DQN import DQN
+from RL_Algorithm.Function_based.Linear_Q import Linear_QN
 
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter  # TensorBoard logging
@@ -26,6 +27,8 @@ parser.add_argument("--num_envs", type=int, default=1, help="Number of environme
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
+parser.add_argument("--algorithm", type=str, default="DQN", choices=["DQN", "Linear_Q"], 
+                    help="Algorithm to use (DQN or Linear_Q)")
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -102,7 +105,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # Get task and algorithm name
     task_name = str(args_cli.task).split('-')[0]  # Stabilize, SwingUp
-    algorithm_name = "DQN"  # Only DQN is implemented
+    algorithm_name = args_cli.algorithm  # Use from command line arguments
 
     # Setup TensorBoard logging
     current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -112,13 +115,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     print(f"TensorBoard logs will be saved to: {log_dir}")
 
     # hyperparameters - EXACTLY MATCH WHAT PLAY.PY EXPECTS
-    # Optimized hyperparameters for 5000 episodes
     # Balanced exploration-exploitation hyperparameters
-    # Hyperparameters with optimal exploration schedule
     num_of_action = 3                     # three discrete actions
     action_range = [-2.5, 2.5]            # force range for CartPole
     learning_rate = 1e-3                  # moderate learning rate
-    hidden_dim = 128                      # network capacity
+    hidden_dim = 128                      # network capacity (DQN only)
     n_episodes = 5000                     # training episodes
     initial_epsilon = 1.0                 # start with full exploration
     epsilon_decay = 0.9985                # precisely calculated for 2000-step decay
@@ -126,14 +127,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     discount = 0.99                       # discount factor
     buffer_size = 10000                   # experience buffer size
     batch_size = 64                       # batch size
-    dropout = 0.2                         # dropout for regularization
-    tau = 0.005                           # target network update rate
+    dropout = 0.2                         # dropout for regularization (DQN only)
+    tau = 0.005                           # target network update rate (DQN only)
+    
     # Log hyperparameters to TensorBoard
     hp_dict = {
+        "algorithm": algorithm_name,
         "num_of_action": num_of_action,
         "action_range": str(action_range),
         "learning_rate": learning_rate,
-        "hidden_dim": hidden_dim,
         "n_episodes": n_episodes,
         "initial_epsilon": initial_epsilon,
         "epsilon_decay": epsilon_decay,
@@ -141,9 +143,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         "discount_factor": discount,
         "buffer_size": buffer_size,
         "batch_size": batch_size,
-        "dropout": dropout,
-        "tau": tau
     }
+    
+    if algorithm_name == "DQN":
+        hp_dict.update({
+            "hidden_dim": hidden_dim,
+            "dropout": dropout,
+            "tau": tau
+        })
     
     for name, val in hp_dict.items():
         writer.add_text("hyperparameters", f"{name}: {val}", 0)
@@ -165,27 +172,44 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     print(f"Training with algorithm: {algorithm_name}")
     print(f"Device: {device}")
 
-    # Create directory for saving model checkpoints - MATCH THE PLAY.PY EXPECTED PATH
+    # Create directory for saving model checkpoints
     save_dir = os.path.join(f"w/{task_name}", algorithm_name)
     os.makedirs(save_dir, exist_ok=True)
 
-    # Initialize DQN agent
-    agent = DQN(
-        device=device,
-        num_of_action=num_of_action,
-        action_range=action_range,
-        n_observations=4,  # Cart-pole has 4 state variables
-        hidden_dim=hidden_dim,
-        dropout=dropout,
-        learning_rate=learning_rate,
-        tau=tau,
-        initial_epsilon=initial_epsilon,
-        epsilon_decay=epsilon_decay,
-        final_epsilon=final_epsilon,
-        discount_factor=discount,
-        buffer_size=buffer_size,
-        batch_size=batch_size,
-    )
+    # Initialize the appropriate agent based on algorithm choice
+    if algorithm_name == "DQN":
+        agent = DQN(
+            device=device,
+            num_of_action=num_of_action,
+            action_range=action_range,
+            n_observations=4,  # Cart-pole has 4 state variables
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+            learning_rate=learning_rate,
+            tau=tau,
+            initial_epsilon=initial_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=discount,
+            buffer_size=buffer_size,
+            batch_size=batch_size,
+        )
+    elif algorithm_name == "Linear_Q":
+        agent = Linear_QN(
+            device=device,
+            num_of_action=num_of_action,
+            action_range=action_range,
+            n_observations=4,  # Cart-pole has 4 state variables
+            learning_rate=learning_rate,
+            initial_epsilon=initial_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=discount,
+            buffer_size=buffer_size,
+            batch_size=batch_size,
+        )
+    else:
+        raise ValueError(f"Unsupported algorithm: {algorithm_name}")
 
     # Initialize statistics tracking
     episode_rewards = []
