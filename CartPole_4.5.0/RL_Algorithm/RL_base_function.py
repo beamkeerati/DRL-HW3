@@ -154,10 +154,11 @@ class BaseAlgorithm():
     def decay_epsilon(self):
         """
         Decay epsilon value to reduce exploration over time.
+        Uses exponential decay with a minimum value.
         """
-        # ========= put your code here ========= #
+        # Multiply by the decay rate directly (not 1 minus the decay rate)
         self.epsilon = max(self.final_epsilon, self.epsilon * self.epsilon_decay)
-        # ====================================== #
+        return self.epsilon
 
     def save_w(self, path, filename):
         """

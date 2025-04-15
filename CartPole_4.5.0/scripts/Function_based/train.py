@@ -112,20 +112,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     print(f"TensorBoard logs will be saved to: {log_dir}")
 
     # hyperparameters - EXACTLY MATCH WHAT PLAY.PY EXPECTS
-    num_of_action = 3                     # two discrete actions (e.g., push left or push right)
-    action_range = [-2.5, 2.5]            # continuous force range corresponding to actions
-    learning_rate = 1e-3                  # learning rate for optimizer
-    hidden_dim = 64                       # number of neurons in the hidden layer
-    n_episodes = 10000                     # number of training episodes
-    initial_epsilon = 1.0                 # starting exploration rate
-    epsilon_decay = 0.99                 # epsilon decay per step (or per action)
-    final_epsilon = 0.05                 # minimum exploration rate
-    discount = 0.95                       # discount factor for future rewards
-    buffer_size = 10000                   # replay buffer capacity
-    batch_size = 64                       # minibatch size for experience replay
-    dropout = 0.2                         # dropout rate
-    tau = 0.005                           # soft update parameter
-
+    # Optimized hyperparameters for 5000 episodes
+    # Balanced exploration-exploitation hyperparameters
+    # Hyperparameters with optimal exploration schedule
+    num_of_action = 3                     # three discrete actions
+    action_range = [-2.5, 2.5]            # force range for CartPole
+    learning_rate = 1e-3                  # moderate learning rate
+    hidden_dim = 128                      # network capacity
+    n_episodes = 5000                     # training episodes
+    initial_epsilon = 1.0                 # start with full exploration
+    epsilon_decay = 0.9985                # precisely calculated for 2000-step decay
+    final_epsilon = 0.05                  # minimum exploration threshold
+    discount = 0.99                       # discount factor
+    buffer_size = 10000                   # experience buffer size
+    batch_size = 64                       # batch size
+    dropout = 0.2                         # dropout for regularization
+    tau = 0.005                           # target network update rate
     # Log hyperparameters to TensorBoard
     hp_dict = {
         "num_of_action": num_of_action,
@@ -201,94 +203,85 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # simulate environment
     while simulation_app.is_running():
         
+        # Training loop
         for episode in tqdm(range(n_episodes)):
-            episode_start_time = time.time()
-            
-            # Train one episode with DQN
-            returns = agent.learn(env)
-            
-            # Extract episode data (if available)
-            episode_reward = 0
-            episode_length = 0
-            episode_loss = 0
-            
-            if returns is not None:
-                # Some implementations might return episode statistics
-                if isinstance(returns, tuple) and len(returns) >= 1:
-                    episode_reward = returns[0]
-                if isinstance(returns, tuple) and len(returns) >= 2:
-                    episode_length = returns[1]
-            
-            # Update statistics
-            episode_rewards.append(episode_reward)
-            episode_lengths.append(episode_length)
-            
-            # Get current epsilon (exploration rate)
-            epsilon_value = getattr(agent, 'epsilon', 0.0)
-            epsilon_values.append(epsilon_value)
-            
-            # Calculate episode duration
-            episode_duration = time.time() - episode_start_time
-            
-            # Calculate moving averages
-            window_size = min(10, len(episode_rewards))
-            avg_reward = sum(episode_rewards[-window_size:]) / window_size
-            avg_length = sum(episode_lengths[-window_size:]) / window_size
-            
-            # Log to TensorBoard
-            writer.add_scalar('Training/Episode_Reward', episode_reward, episode)
-            writer.add_scalar('Training/Episode_Length', episode_length, episode)
-            writer.add_scalar('Training/Average_Reward', avg_reward, episode)
-            writer.add_scalar('Training/Average_Length', avg_length, episode)
-            writer.add_scalar('Training/Episode_Duration', episode_duration, episode)
-            writer.add_scalar('Exploration/Epsilon', epsilon_value, episode)
-            
-            # Log model parameters periodically
-            if episode % 50 == 0:
-                if hasattr(agent, 'policy_net'):
-                    for name, param in agent.policy_net.named_parameters():
-                        writer.add_histogram(f'Parameters/{name}', param.data, episode)
-                        if param.grad is not None:
-                            writer.add_histogram(f'Gradients/{name}', param.grad, episode)
-                
-                # For DQN, record Q-value distribution
-                if hasattr(agent, 'policy_net') and hasattr(agent, 'memory') and hasattr(agent, 'batch_size') and hasattr(agent, 'generate_sample'):
-                    # Sample a batch if possible
-                    if len(agent.memory) > agent.batch_size:
-                        sample = agent.generate_sample(agent.batch_size)
-                        if sample is not None and len(sample) >= 3:  # Make sure we have state_batch
-                            _, _, state_batch, *_ = sample
-                            with torch.no_grad():
-                                q_values = agent.policy_net(state_batch)
-                                q_means = q_values.mean(dim=0)
-                                q_stds = q_values.std(dim=0)
-                                
-                                for action_idx in range(num_of_action):
-                                    writer.add_scalar(f'Q_Values/Action_{action_idx}_Mean', q_means[action_idx], episode)
-                                    writer.add_scalar(f'Q_Values/Action_{action_idx}_Std', q_stds[action_idx], episode)
-                                
-                                # Log Q-value distribution
-                                writer.add_histogram('Q_Values/Distribution', q_values.flatten(), episode)
-            
-            # Print progress
-            if episode % 10 == 0:
-                print(f"\nEpisode {episode}/{n_episodes}")
-                print(f"  Reward: {episode_reward:.2f} (Avg10: {avg_reward:.2f})")
-                print(f"  Length: {episode_length} steps (Avg10: {avg_length:.1f})")
-                print(f"  Epsilon: {epsilon_value:.4f}")
-                print(f"  Duration: {episode_duration:.2f}s")
-            
-            # Save model periodically with EXACT naming format that play.py expects
-            if episode % 100 == 0 or episode == n_episodes - 1:
-                model_file = f"{algorithm_name}_{episode}_{num_of_action}_{action_range[1]}.json"
-                agent.save_w(save_dir, model_file)
-                print(f"Model checkpoint saved: {model_file}")
-            
-            # Always save a checkpoint at episode 0 (this is what play.py expects by default)
-            if episode == 0:
-                model_file = f"{algorithm_name}_0_{num_of_action}_{action_range[1]}.json"
-                agent.save_w(save_dir, model_file)
-                print(f"Initial model saved: {model_file}")
+            try:
+                episode_start_time = time.time()
+
+                # Print episode number at the beginning
+                print(f"\nStarting Episode {episode}/{n_episodes}")
+
+                # Train one episode with DQN
+                returns = agent.learn(env)
+
+                # Extract episode data with proper tensor handling
+                episode_reward = to_scalar(returns[0]) if returns and len(returns) >= 1 else 0
+                episode_length = to_scalar(returns[1]) if returns and len(returns) >= 2 else 0
+                episode_loss = to_scalar(returns[2]) if returns and len(returns) >= 3 else 0
+
+                # Debug print actual returned values
+                print(f"  Raw returns: {returns}")
+                print(f"  Processed: reward={episode_reward}, length={episode_length}, loss={episode_loss}")
+
+                # Update statistics with scalar values
+                episode_rewards.append(episode_reward)
+                episode_lengths.append(episode_length)
+                if episode_loss != 0:
+                    losses.append(episode_loss)
+
+                # Get current epsilon (exploration rate)
+                epsilon_value = to_scalar(getattr(agent, 'epsilon', 0.0))
+                epsilon_values.append(epsilon_value)
+
+                # Calculate episode duration
+                episode_duration = time.time() - episode_start_time
+
+                # Calculate moving averages with error checking
+                window_size = min(10, len(episode_rewards))
+                if window_size > 0:
+                    avg_reward = sum(episode_rewards[-window_size:]) / window_size
+                    avg_length = sum(episode_lengths[-window_size:]) / window_size
+                else:
+                    avg_reward = 0
+                    avg_length = 0
+
+                # Log to TensorBoard
+                writer.add_scalar('Training/Episode_Reward', episode_reward, episode)
+                writer.add_scalar('Training/Episode_Length', episode_length, episode)
+                writer.add_scalar('Training/Average_Reward', avg_reward, episode)
+                writer.add_scalar('Training/Average_Length', avg_length, episode)
+                writer.add_scalar('Training/Episode_Duration', episode_duration, episode)
+                writer.add_scalar('Exploration/Epsilon', epsilon_value, episode)
+
+                if episode_loss != 0:
+                    writer.add_scalar('Training/Loss', episode_loss, episode)
+
+                # Print progress with type verification
+                if episode % 10 == 0:
+                    print(f"\nEpisode {episode}/{n_episodes}")
+                    print(f"  Reward: {float(episode_reward):.2f} (Avg10: {float(avg_reward):.2f})")
+                    print(f"  Length: {int(episode_length)} steps (Avg10: {float(avg_length):.1f})")
+                    print(f"  Epsilon: {float(epsilon_value):.4f}")
+                    print(f"  Duration: {float(episode_duration):.2f}s")
+
+                # Save model periodically with EXACT naming format that play.py expects
+                if episode % 100 == 0 or episode == n_episodes - 1:
+                    model_file = f"{algorithm_name}_{episode}_{num_of_action}_{action_range[1]}.json"
+                    agent.save_w(save_dir, model_file)
+                    print(f"Model checkpoint saved: {model_file}")
+
+                # Always save a checkpoint at episode 0 (this is what play.py expects by default)
+                if episode == 0:
+                    model_file = f"{algorithm_name}_0_{num_of_action}_{action_range[1]}.json"
+                    agent.save_w(save_dir, model_file)
+                    print(f"Initial model saved: {model_file}")
+
+            except Exception as e:
+                print(f"Error during episode {episode}: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                # Continue with next episode instead of crashing the whole training
+                continue
 
         # Training completed
         training_time = time.time() - start_time
@@ -352,6 +345,24 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # close the simulator
     env.close()
+    
+def to_scalar(value):
+    """
+    Convert a value to a Python scalar if it's a tensor.
+
+    Args:
+        value: Any value, potentially a tensor
+
+    Returns:
+        The value as a Python scalar (int, float, etc.)
+    """
+    if isinstance(value, torch.Tensor):
+        # Handle different tensor shapes/types
+        if value.numel() == 1:  # Single element tensor
+            return value.item()
+        else:  # Multi-element tensor (unexpected in this context)
+            return value.detach().cpu().numpy().tolist()
+    return value
 
 if __name__ == "__main__":
     # run the main function
