@@ -14,6 +14,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 
 from RL_Algorithm.Function_based.DQN import DQN
 from RL_Algorithm.Function_based.Linear_Q import Linear_QN
+from RL_Algorithm.Function_based.MC_REINFORCE import MC_REINFORCE
 
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter  # TensorBoard logging
@@ -27,8 +28,7 @@ parser.add_argument("--num_envs", type=int, default=1, help="Number of environme
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
-parser.add_argument("--algorithm", type=str, default="DQN", choices=["DQN", "Linear_Q"], 
-                    help="Algorithm to use (DQN or Linear_Q)")
+parser.add_argument("--algorithm", type=str, default="DQN", choices=["DQN", "Linear_Q", "MC_REINFORCE"], help="Algorithm to use (DQN, Linear_Q, or MC_REINFORCE)")
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -137,19 +137,30 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         "action_range": str(action_range),
         "learning_rate": learning_rate,
         "n_episodes": n_episodes,
-        "initial_epsilon": initial_epsilon,
-        "epsilon_decay": epsilon_decay,
-        "final_epsilon": final_epsilon,
         "discount_factor": discount,
         "buffer_size": buffer_size,
         "batch_size": batch_size,
     }
-    
+
     if algorithm_name == "DQN":
         hp_dict.update({
             "hidden_dim": hidden_dim,
             "dropout": dropout,
-            "tau": tau
+            "tau": tau,
+            "initial_epsilon": initial_epsilon,
+            "epsilon_decay": epsilon_decay,
+            "final_epsilon": final_epsilon,
+        })
+    elif algorithm_name == "Linear_Q":
+        hp_dict.update({
+            "initial_epsilon": initial_epsilon,
+            "epsilon_decay": epsilon_decay,
+            "final_epsilon": final_epsilon,
+        })
+    elif algorithm_name == "MC_REINFORCE":
+        hp_dict.update({
+            "hidden_dim": hidden_dim,
+            "dropout": dropout,
         })
     
     for name, val in hp_dict.items():
@@ -205,6 +216,23 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             epsilon_decay=epsilon_decay,
             final_epsilon=final_epsilon,
             discount_factor=discount,
+            buffer_size=buffer_size,
+            batch_size=batch_size,
+        )
+    elif algorithm_name == "MC_REINFORCE":
+        agent = MC_REINFORCE(
+            device=device,
+            num_of_action=num_of_action,
+            action_range=action_range,
+            n_observations=4,  # Cart-pole has 4 state variables
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+            learning_rate=learning_rate,
+            discount_factor=discount,
+            # Include these for compatibility with BaseAlgorithm
+            initial_epsilon=0.0,  # Not used in REINFORCE
+            epsilon_decay=1.0,    # Not used in REINFORCE
+            final_epsilon=0.0,    # Not used in REINFORCE
             buffer_size=buffer_size,
             batch_size=batch_size,
         )
