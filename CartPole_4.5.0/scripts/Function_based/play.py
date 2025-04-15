@@ -10,8 +10,10 @@ from isaaclab.app import AppLauncher
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-# Fix the import path
+# Fix the import path - include all algorithms
 from RL_Algorithm.Function_based.DQN import DQN
+from RL_Algorithm.Function_based.Linear_Q import Linear_QN
+from RL_Algorithm.Function_based.MC_REINFORCE import MC_REINFORCE
 
 from tqdm import tqdm
 
@@ -24,6 +26,8 @@ parser.add_argument("--num_envs", type=int, default=1, help="Number of environme
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
+parser.add_argument("--algorithm", type=str, default="DQN", choices=["DQN", "Linear_Q", "MC_REINFORCE"], 
+                   help="Algorithm to use (DQN, Linear_Q, or MC_REINFORCE)")
 
 
 # append AppLauncher cli args
@@ -101,19 +105,19 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ========================= Can be modified ========================== #
 
     # hyperparameters - MUST MATCH train.py values
-    num_of_action = 2                     # two discrete actions (e.g., push left or push right)
-    action_range = [-2.5, 2.5]            # continuous force range corresponding to actions
-    learning_rate = 1e-3                  # learning rate for optimizer
-    hidden_dim = 64                       # number of neurons in the hidden layer
-    n_episodes = 10                       # number of episodes to play (can be small for evaluation)
-    initial_epsilon = 0.01                # LOW exploration during evaluation
-    epsilon_decay = 0.0                   # No decay during evaluation
-    final_epsilon = 0.01                  # Fixed low exploration for evaluation
-    discount = 0.95                       # discount factor for future rewards
-    buffer_size = 10000                   # replay buffer capacity
-    batch_size = 64                       # minibatch size for experience replay
-    dropout = 0.2                         # dropout rate
-    tau = 0.005                           # soft update parameter
+    num_of_action = 3                     # three discrete actions
+    action_range = [-2.5, 2.5]            # force range for CartPole
+    learning_rate = 1e-3                  # moderate learning rate
+    hidden_dim = 128                      # network capacity (DQN only)
+    n_episodes = 5000                     # training episodes
+    initial_epsilon = 1.0                 # start with full exploration
+    epsilon_decay = 0.9985                # precisely calculated for 2000-step decay
+    final_epsilon = 0.05                  # minimum exploration threshold
+    discount = 0.99                       # discount factor
+    buffer_size = 10000                   # experience buffer size
+    batch_size = 64                       # batch size
+    dropout = 0.2                         # dropout for regularization (DQN only)
+    tau = 0.005                           # target network update rate (DQN only)
 
     # set up matplotlib
     is_ipython = 'inline' in matplotlib.get_backend()
@@ -131,34 +135,71 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     print("device: ", device)
 
-    # Initialize agent with the same parameters
-    agent = DQN(
-        device=device,
-        num_of_action=num_of_action,
-        action_range=action_range,
-        n_observations=4,  # Cart-pole has 4 state variables
-        hidden_dim=hidden_dim,
-        dropout=dropout,
-        learning_rate=learning_rate,
-        tau=tau,
-        initial_epsilon=initial_epsilon,
-        epsilon_decay=epsilon_decay,
-        final_epsilon=final_epsilon,
-        discount_factor=discount,
-        buffer_size=buffer_size,
-        batch_size=batch_size,
-    )
+    # Get algorithm name
+    algorithm_name = args_cli.algorithm
+    print(f"Using algorithm: {algorithm_name}")
+
+    # Initialize the appropriate agent based on algorithm choice
+    if algorithm_name == "DQN":
+        agent = DQN(
+            device=device,
+            num_of_action=num_of_action,
+            action_range=action_range,
+            n_observations=4,  # Cart-pole has 4 state variables
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+            learning_rate=learning_rate,
+            tau=tau,
+            initial_epsilon=initial_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=discount,
+            buffer_size=buffer_size,
+            batch_size=batch_size,
+        )
+    elif algorithm_name == "Linear_Q":
+        agent = Linear_QN(
+            device=device,
+            num_of_action=num_of_action,
+            action_range=action_range,
+            n_observations=4,  # Cart-pole has 4 state variables
+            learning_rate=learning_rate,
+            initial_epsilon=initial_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=discount,
+            buffer_size=buffer_size,
+            batch_size=batch_size,
+        )
+    elif algorithm_name == "MC_REINFORCE":
+        agent = MC_REINFORCE(
+            device=device,
+            num_of_action=num_of_action,
+            action_range=action_range,
+            n_observations=4,  # Cart-pole has 4 state variables
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+            learning_rate=learning_rate,
+            discount_factor=discount,
+            # Include these for compatibility with BaseAlgorithm
+            initial_epsilon=initial_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            buffer_size=buffer_size,
+            batch_size=batch_size,
+        )
+    else:
+        raise ValueError(f"Unsupported algorithm: {algorithm_name}")
 
     task_name = str(args_cli.task).split('-')[0]  # Stabilize, SwingUp
-    Algorithm_name = "DQN"  
-    episode = "final"  # Load the episode 0 model (or you can change to load a different episode)
-    
+    episode = "final"  # Load the final model (or you can change to load a different episode)
+
     # Use EXACTLY the same naming convention as in train.py
-    q_value_file = f"{Algorithm_name}_{episode}_{num_of_action}_{action_range[1]}.json"
-    full_path = os.path.join(f"w/{task_name}", Algorithm_name)
-    
+    q_value_file = f"{algorithm_name}_{episode}_{num_of_action}_{action_range[1]}.json"
+    full_path = os.path.join(f"w/{task_name}", algorithm_name)
+
     print(f"Loading model from: {os.path.join(full_path, q_value_file)}")
-    
+
     try:
         agent.load_w(full_path, q_value_file)
         print("Model loaded successfully!")
@@ -177,11 +218,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # reset environment
     obs, _ = env.reset()
     timestep = 0
-    
+
     # Statistics tracking
     episode_rewards = []
     episode_lengths = []
-    
+
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
@@ -235,7 +276,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 print(f"\nAverage over {n_episodes} episodes:")
                 print(f"  Average Reward: {avg_reward:.4f}")
                 print(f"  Average Episode Length: {avg_length:.2f}")
-            
+                
+                # Print algorithm-specific metrics
+                if algorithm_name == "MC_REINFORCE":
+                    print("  Algorithm: MC_REINFORCE (Policy Gradient)")
+                elif algorithm_name == "DQN":
+                    print("  Algorithm: DQN (Value-based)")
+                elif algorithm_name == "Linear_Q":
+                    print("  Algorithm: Linear Q-learning (Value-based)")
+        
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video

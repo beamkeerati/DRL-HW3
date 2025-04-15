@@ -177,33 +177,47 @@ class MC_REINFORCE(BaseAlgorithm):
         return returns
         # ====================================== #
 
-    def select_action(self, state_tensor):
+    def select_action(self, state):
         """
         Select an action using the current policy.
-        
+
         Args:
-            state_tensor (Tensor): The current state tensor.
-            
+            state: The current state of the environment.
+
         Returns:
-            Tuple: (action_idx, log_prob, action_tensor)
+            torch.Tensor: The selected action tensor
         """
+        # Process state based on its type
+        if isinstance(state, dict):
+            if "observation" in state:
+                state_tensor = state["observation"]
+            elif "obs" in state:
+                state_tensor = state["obs"]
+            else:
+                # Fallback: use the first available value
+                state_tensor = next(iter(state.values()))
+        else:
+            state_tensor = state
+
+        # Convert state to tensor if needed
+        if not isinstance(state_tensor, torch.Tensor):
+            state_tensor = torch.tensor(state_tensor, dtype=torch.float32, device=self.device)
+
+        # Ensure state is the right shape (add batch dimension if needed)
+        if state_tensor.dim() == 1:
+            state_tensor = state_tensor.unsqueeze(0)
+
         # Get action probabilities from policy network
         action_probs = self.policy_net(state_tensor)
-        
+
         # Create a distribution and sample an action
         dist = distributions.Categorical(action_probs)
         action_idx = dist.sample()
-        
-        # Get the log probability of the selected action
-        log_prob = dist.log_prob(action_idx)
-        
+
         # Convert discrete action index to continuous action value
         action_tensor = self.scale_action(action_idx.item())
-        
-        if self.debug_mode and random.random() < 0.05:  # Print occasionally
-            print(f"Action probs: {action_probs.detach().cpu().numpy()}, Selected: {action_idx.item()}")
-            
-        return action_idx, log_prob, action_tensor
+
+        return action_tensor
 
     def generate_trajectory(self, env):
         """
