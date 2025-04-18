@@ -187,7 +187,6 @@ class MC_REINFORCE(BaseAlgorithm):
         Returns:
             torch.Tensor: The selected action tensor
         """
-        # Process state based on its type
         if isinstance(state, dict):
             if "observation" in state:
                 state_tensor = state["observation"]
@@ -215,9 +214,21 @@ class MC_REINFORCE(BaseAlgorithm):
         action_idx = dist.sample()
 
         # Convert discrete action index to continuous action value
-        action_tensor = self.scale_action(action_idx.item())
+        # Map from discrete action index to continuous value in action_range
+        action_range = self.action_range
+        num_actions = self.num_of_action
 
-        return action_tensor
+        # Calculate normalized position in range based on action index
+        normalized_pos = action_idx.item() / (num_actions - 1)
+
+        # Linear mapping to action range
+        action_value = action_range[0] + normalized_pos * (action_range[1] - action_range[0])
+
+        # Create tensor for action value
+        action_tensor = torch.tensor([action_value], device=self.device)
+
+        # Return tuple of (action_idx, placeholder, action_tensor)
+        return action_idx, None, action_tensor
 
     def generate_trajectory(self, env):
         """
