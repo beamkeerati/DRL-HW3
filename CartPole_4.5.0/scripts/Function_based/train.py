@@ -1,7 +1,3 @@
-"""Script to train RL agent."""
-
-"""Launch Isaac Sim Simulator first."""
-
 import argparse
 import sys
 import os
@@ -9,6 +5,8 @@ import time
 from datetime import datetime
 
 from isaaclab.app import AppLauncher
+from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter  # TensorBoard logging
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -17,10 +15,7 @@ from RL_Algorithm.Function_based.Linear_Q import Linear_QN
 from RL_Algorithm.Function_based.MC_REINFORCE import MC_REINFORCE
 from RL_Algorithm.Function_based.AC import Actor_Critic  # Import PPO (Actor-Critic)
 
-from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter  # TensorBoard logging
-
-# add argparse arguments
+# Modify argparse to accept hyperparameters from shell
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
@@ -30,6 +25,23 @@ parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
 parser.add_argument("--algorithm", type=str, default="DQN", choices=["DQN", "Linear_Q", "MC_REINFORCE", "AC"], help="Algorithm to use (DQN, Linear_Q, MC_REINFORCE, or AC)")
+parser.add_argument("--learning_rate", type=float, default=1e-3, help="Learning rate for the agent.")
+parser.add_argument("--initial_epsilon", type=float, default=1.0, help="Initial epsilon for exploration.")
+parser.add_argument("--epsilon_decay", type=float, default=0.9985, help="Decay rate of epsilon.")
+parser.add_argument("--final_epsilon", type=float, default=0.05, help="Final epsilon for exploration.")
+parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training.")
+parser.add_argument("--hidden_dim", type=int, default=128, help="Size of hidden layer in neural network.")
+parser.add_argument("--discount", type=float, default=0.99, help="Discount factor.")
+parser.add_argument("--buffer_size", type=int, default=10000, help="Size of the experience replay buffer.")
+parser.add_argument("--tau", type=float, default=0.005, help="Target network update rate (DQN only).")
+parser.add_argument("--dropout", type=float, default=0.2, help="Dropout rate for the neural network.")
+
+# PPO-specific hyperparameters
+parser.add_argument("--clip_ratio", type=float, default=0.2, help="PPO clipping parameter.")
+parser.add_argument("--entropy_coef", type=float, default=0.01, help="PPO entropy coefficient.")
+parser.add_argument("--value_coef", type=float, default=0.5, help="PPO value loss coefficient.")
+parser.add_argument("--update_epochs", type=int, default=4, help="Number of PPO epochs per update.")
+parser.add_argument("--gae_lambda", type=float, default=0.95, help="PPO GAE lambda.")
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -46,14 +58,11 @@ sys.argv = [sys.argv[0]] + hydra_args
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
-"""Rest everything follows."""
-
 import gymnasium as gym
 import torch
 from datetime import datetime
 import random
 import numpy as np
-
 import matplotlib
 import matplotlib.pyplot as plt
 from collections import namedtuple, deque
@@ -61,7 +70,6 @@ from itertools import count
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-
 
 from isaaclab.envs import (
     DirectMARLEnv,
@@ -92,9 +100,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # override configurations with non-hydra CLI arguments
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
-
-    # set the environment seed
-    # note: certain randomizations occur in the environment initialization so we set the seed here
     env_cfg.seed = agent_cfg["seed"]
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
 
@@ -108,35 +113,39 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     task_name = str(args_cli.task).split('-')[0]  # Stabilize, SwingUp
     algorithm_name = args_cli.algorithm  # Use from command line arguments
 
+    # Generate a unique name for this run based on the hyperparameters
+    run_name = f"{algorithm_name}_lr{args_cli.learning_rate}_eps{args_cli.initial_epsilon}_bs{args_cli.batch_size}_hd{args_cli.hidden_dim}_tau{args_cli.tau}_gamma{args_cli.discount}_dropout{args_cli.dropout}_clip{args_cli.clip_ratio}_entropy{args_cli.entropy_coef}_value{args_cli.value_coef}_update_epochs{args_cli.update_epochs}_gae{args_cli.gae_lambda}"
+
     # Setup TensorBoard logging
     current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_dir = os.path.join("logs", task_name, algorithm_name, current_time)
+    log_dir = os.path.join("logs", run_name, current_time)
     os.makedirs(log_dir, exist_ok=True)
     writer = SummaryWriter(log_dir)
     print(f"TensorBoard logs will be saved to: {log_dir}")
 
-    # hyperparameters - EXACTLY MATCH WHAT PLAY.PY EXPECTS
-    # Balanced exploration-exploitation hyperparameters
+    # Hyperparameters - can be passed from shell
     num_of_action = 3                     # three discrete actions
     action_range = [-2.5, 2.5]            # force range for CartPole
-    learning_rate = 1e-3                  # moderate learning rate
-    hidden_dim = 128                      # network capacity (DQN only)
+
+    # Use the values from argparse
+    learning_rate = args_cli.learning_rate
+    hidden_dim = args_cli.hidden_dim
     n_episodes = 5000                     # training episodes
-    initial_epsilon = 1.0                 # start with full exploration
-    epsilon_decay = 0.9985                # precisely calculated for 2000-step decay
-    final_epsilon = 0.05                  # minimum exploration threshold
-    discount = 0.99                       # discount factor
-    buffer_size = 10000                   # experience buffer size
-    batch_size = 64                       # batch size
-    dropout = 0.2                         # dropout for regularization (DQN only)
-    tau = 0.005                           # target network update rate (DQN only)
+    initial_epsilon = args_cli.initial_epsilon
+    epsilon_decay = args_cli.epsilon_decay
+    final_epsilon = args_cli.final_epsilon
+    discount = args_cli.discount
+    buffer_size = args_cli.buffer_size
+    batch_size = args_cli.batch_size
+    dropout = args_cli.dropout
+    tau = args_cli.tau
     
     # PPO-specific hyperparameters
-    clip_ratio = 0.2                      # PPO clipping parameter
-    entropy_coef = 0.01                   # entropy bonus coefficient
-    value_coef = 0.5                      # value loss coefficient
-    update_epochs = 4                     # number of PPO epochs per update
-    gae_lambda = 0.95                     # GAE lambda parameter
+    clip_ratio = args_cli.clip_ratio
+    entropy_coef = args_cli.entropy_coef
+    value_coef = args_cli.value_coef
+    update_epochs = args_cli.update_epochs
+    gae_lambda = args_cli.gae_lambda
     
     # Log hyperparameters to TensorBoard
     hp_dict = {
@@ -148,39 +157,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         "discount_factor": discount,
         "buffer_size": buffer_size,
         "batch_size": batch_size,
+        "tau": tau,
+        "dropout": dropout,
+        "clip_ratio": clip_ratio,
+        "entropy_coef": entropy_coef,
+        "value_coef": value_coef,
+        "update_epochs": update_epochs,
+        "gae_lambda": gae_lambda,
     }
 
-    if algorithm_name == "DQN":
-        hp_dict.update({
-            "hidden_dim": hidden_dim,
-            "dropout": dropout,
-            "tau": tau,
-            "initial_epsilon": initial_epsilon,
-            "epsilon_decay": epsilon_decay,
-            "final_epsilon": final_epsilon,
-        })
-    elif algorithm_name == "Linear_Q":
-        hp_dict.update({
-            "initial_epsilon": initial_epsilon,
-            "epsilon_decay": epsilon_decay,
-            "final_epsilon": final_epsilon,
-        })
-    elif algorithm_name == "MC_REINFORCE":
-        hp_dict.update({
-            "hidden_dim": hidden_dim,
-            "dropout": dropout,
-        })
-    elif algorithm_name == "AC":  # For PPO
-        hp_dict.update({
-            "hidden_dim": hidden_dim,
-            "dropout": dropout,
-            "clip_ratio": clip_ratio,
-            "entropy_coef": entropy_coef,
-            "value_coef": value_coef,
-            "update_epochs": update_epochs,
-            "gae_lambda": gae_lambda,
-        })
-    
     for name, val in hp_dict.items():
         writer.add_text("hyperparameters", f"{name}: {val}", 0)
 
@@ -354,15 +339,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                     print(f"  Epsilon: {float(epsilon_value):.4f}")
                     print(f"  Duration: {float(episode_duration):.2f}s")
 
-                # Save model periodically with EXACT naming format that play.py expects
+                # Create a more descriptive model filename with hyperparameters
+                model_file = f"{algorithm_name}_lr{learning_rate}_eps{initial_epsilon}_bs{batch_size}_hd{hidden_dim}_tau{tau}_gamma{discount}_dropout{dropout}_clip{clip_ratio}_entropy{entropy_coef}_value{value_coef}_update_epochs{update_epochs}_gae{gae_lambda}_episode{episode}.json"
+
+                # Save model periodically with exact naming format that includes hyperparameters
                 if episode % 100 == 0 or episode == n_episodes - 1:
-                    model_file = f"{algorithm_name}_{episode}_{num_of_action}_{action_range[1]}.json"
                     agent.save_w(save_dir, model_file)
                     print(f"Model checkpoint saved: {model_file}")
 
                 # Always save a checkpoint at episode 0 (this is what play.py expects by default)
                 if episode == 0:
-                    model_file = f"{algorithm_name}_0_{num_of_action}_{action_range[1]}.json"
+                    model_file = f"{algorithm_name}_lr{learning_rate}_eps{initial_epsilon}_bs{batch_size}_hd{hidden_dim}_tau{tau}_gamma{discount}_dropout{dropout}_clip{clip_ratio}_entropy{entropy_coef}_value{value_coef}_update_epochs{update_epochs}_gae{gae_lambda}_episode0.json"
                     agent.save_w(save_dir, model_file)
                     print(f"Initial model saved: {model_file}")
 
@@ -435,7 +422,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # close the simulator
     env.close()
-    
+
 def to_scalar(value):
     """
     Convert a value to a Python scalar if it's a tensor.
