@@ -357,8 +357,11 @@ Epsilon and other parameter's behavior has already been studied at [DRL_HW2](htt
 ![DQN_reward](/image/DQN_Reward.png)
 
 ### 4. **Monte Carlo**
-   - **Performance**: Monte Carlo was unable to function correctly and returned zero rewards.
-   - **Key Insight**: Despite extensive testing and hyperparameter adjustments, the Monte Carlo method could not be made to work in this setup. It is likely that the environment or the algorithm’s specific implementation is not compatible with the settings used in this experiment.
+- **Performance**: Monte Carlo exhibited some improvements in reward generation after adjustments, though it still struggled to match the stability and convergence of other algorithms. The reward showed a gradual increase but did not achieve the same level of performance as Actor Critic or Linear Q.
+
+- **Key Insight**: While Monte Carlo had some success in reward generation, it still faces challenges with stability and efficiency in this environment. The results suggest that Monte Carlo may be more sensitive to the specific configuration and hyperparameters, and may not perform as reliably in dynamic environments like the one used in this experiment. Due to time constraints, only one graph was generated for this method, which limited further exploration of its full potential. Further fine-tuning of hyperparameters could potentially improve its performance, but it requires careful attention to detail and better handling of episodic rewards.
+
+![MC_reward](/image/MC_Reward.png)
 
 ---
 
@@ -370,10 +373,9 @@ Epsilon and other parameter's behavior has already been studied at [DRL_HW2](htt
 
 - **DQN** shows unstable behavior with an exponential decay in rewards, likely due to its sensitivity to hyperparameters, leading to less reliable performance compared to other algorithms.
 
-- **Monte Carlo** failed to generate meaningful results during this experiment, but this was due to issues in running the algorithm on our end and not a limitation of the algorithm itself.
+- **Monte Carlo** failed to generate meaningful results during this experiment, but this was due to issues in running the algorithm on our end and not a limitation of the algorithm itself. **Only one graph of Monte Carlo was obtained** due to time constraints, and the results were not sufficient for a full evaluation.
 
-In conclusion, Actor Critic (PPO) is the best-performing algorithm in this experiment, providing the highest reward with stable convergence. Linear Q performs similarly but with more reward fluctuation, while DQN exhibits instability. Monte Carlo was not evaluated successfully, but its failure was due to issues with running the algorithm, not the algorithm's inherent capabilities.
-
+In conclusion, **Actor Critic (PPO)** is the best-performing algorithm in this experiment, providing the highest reward with stable convergence. **Linear Q** performs similarly but with more reward fluctuation, while **DQN** exhibits instability. **Monte Carlo** was not evaluated successfully, but its failure was due to issues with running the algorithm, not the algorithm's inherent capabilities.
 
 Training Algorithms: [Actor Critic](/CartPole_4.5.0/AC_tuning_run_script.sh), [DQN](/CartPole_4.5.0/DQN_tuning_run_script.sh), [DQN2](/CartPole_4.5.0/DQN_tuning_run_script_2.sh), [Monte Carlo Reinforced](/CartPole_4.5.0/MCR_tuning_run%20_script.sh) and [Linear Q](/CartPole_4.5.0/LQ_tuning_run_script.sh).
 
