@@ -3,19 +3,17 @@
 # Set environment variable to run Isaac Sim in headless mode
 export OMNIVERSE_HEADLESS=true
 
-# Define hyperparameter values to loop over
-learning_rates=(1e-4 1e-3 1e-2)  # Learning rates to tune
-discount_factors=(0.9 0.95 0.99)  # Discount factor values to tune (gamma)
+# Define hyperparameter values to loop over (extended range)
+learning_rates=(1e-5 1e-4 1e-3 1e-2 1e-1)  # Expanded learning rates to tune
+discount_factors=(0.8 0.85 0.9 0.95 0.99)  # Expanded discount factor values to tune (gamma)
 
 # Define fixed hyperparameters
 batch_size=64
-hidden_dim=128
-target_update_rate=0.005  # Fixed tau (target network update rate)
-dropout=0.2  # Fixed dropout value
+hidden_dim=128  # Size of hidden layers in Linear Q
 
 # Define the base task and algorithm
 TASK="Stabilize-Isaac-Cartpole-v0"
-ALGORITHM="MC_REINFORCE"  # Using Monte Carlo REINFORCE algorithm
+ALGORITHM="Linear_Q"  # Using Linear Q algorithm
 
 # Loop through discount factor values first (outer loop)
 for discount in "${discount_factors[@]}"; do
@@ -30,9 +28,7 @@ for discount in "${discount_factors[@]}"; do
       --learning_rate $lr \
       --batch_size $batch_size \
       --hidden_dim $hidden_dim \
-      --tau $target_update_rate \
       --discount $discount \
-      --dropout $dropout \
       --headless
   done
 done

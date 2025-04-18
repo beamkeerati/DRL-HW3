@@ -324,8 +324,64 @@ Larger batch sizes tend to lead to smoother updates, which result in less varian
 
 ---
 
-Epsilon and other parameter's behavior has already been studied at [DRL_HW2](https://github.com/beamkeerati/DRL-HW2).
+
+### Actor Critic Hyperparameters
+
+After tuning all Actor Critic hyperparameters using the grid search method with the [Actor Critic tune Script](/CartPole_4.5.0/AC_tuning_run_script.sh), there was minimal divergence observed across all aspects, which demonstrates the stability of the algorithm. However, this consistency may not necessarily be a positive outcome, as it could also indicate that the reward values were not high enough to detect meaningful differences in this dynamic environment.
 
 ---
 
+Epsilon and other parameter's behavior has already been studied at [DRL_HW2](https://github.com/beamkeerati/DRL-HW2).
+
 ## Algorithm Evaluation
+
+### 1. **Actor Critic (PPO)**
+- **Performance**: Actor Critic consistently achieved relatively high rewards.
+- **Reward Behavior**: The reward stayed relatively stable and high over time, showing good convergence even with scrambled hyperparameters.
+- **Key Insight**: The Actor Critic method showed the most robust performance across all configurations. It appears to handle the instability of other algorithms better, maintaining high rewards even when hyperparameters were varied.
+
+![AC_reward](/image/AC_Reward.png)
+
+### 2. **Linear Q**
+- **Performance**: Linear Q demonstrated higher rewards than Actor Critic but exhibited much more variance throughout training.
+- **Reward Behavior**: The reward fluctuated significantly, with occasional sharp peaks and valleys, which suggests that Linear Q has the potential to achieve higher rewards but lacks stability.
+- **Key Insight**: While **Linear Q** can outperform **Actor Critic** in terms of peak reward, its inconsistency could make it less reliable for long-term training. The higher variance in reward indicates that the model may benefit from further tuning and stabilization techniques to fully realize its potential in more complex environments.
+
+![LQ_reward](/image/LQ_Reward.png)
+
+### 3. **DQN**
+   - **Performance**: DQN exhibited an exponential decay in its rewards.
+   - **Reward Behavior**: The reward initially increased but then rapidly decayed over time, showing an unstable learning process with high initial rewards followed by a sharp decline.
+   - **Key Insight**: While DQN can show some promise in certain setups, it seems highly sensitive to hyperparameters like learning rate and discount factor. This sensitivity results in an exponential decay in rewards, indicating that DQN might require more fine-tuning to maintain stable performance.
+
+![DQN_reward](/image/DQN_Reward.png)
+
+### 4. **Monte Carlo**
+   - **Performance**: Monte Carlo was unable to function correctly and returned zero rewards.
+   - **Key Insight**: Despite extensive testing and hyperparameter adjustments, the Monte Carlo method could not be made to work in this setup. It is likely that the environment or the algorithm’s specific implementation is not compatible with the settings used in this experiment.
+
+---
+
+## Summary of Findings
+
+- **Actor Critic** provides the best performance with the highest reward, showing stable convergence with minimal divergence across all aspects. Its consistency, however, might indicate that the reward values were not high enough to detect differences in this dynamic environment.
+
+- **Linear Q** exhibits similar behavior to Actor Critic but with a higher degree of reward fluctuation. While it achieves higher rewards than Actor Critic in some cases, the reward variance makes it less stable overall.
+
+- **DQN** shows unstable behavior with an exponential decay in rewards, likely due to its sensitivity to hyperparameters, leading to less reliable performance compared to other algorithms.
+
+- **Monte Carlo** failed to generate meaningful results during this experiment, but this was due to issues in running the algorithm on our end and not a limitation of the algorithm itself.
+
+In conclusion, Actor Critic (PPO) is the best-performing algorithm in this experiment, providing the highest reward with stable convergence. Linear Q performs similarly but with more reward fluctuation, while DQN exhibits instability. Monte Carlo was not evaluated successfully, but its failure was due to issues with running the algorithm, not the algorithm's inherent capabilities.
+
+
+Training Algorithms: [Actor Critic](/CartPole_4.5.0/AC_tuning_run_script.sh), [DQN](/CartPole_4.5.0/DQN_tuning_run_script.sh), [DQN2](/CartPole_4.5.0/DQN_tuning_run_script_2.sh), [Monte Carlo Reinforced](/CartPole_4.5.0/MCR_tuning_run%20_script.sh) and [Linear Q](/CartPole_4.5.0/LQ_tuning_run_script.sh).
+
+
+---
+
+Author: 
+- Keerati Ubolmart 65340500003
+- Manaswin Anekvisudwong 65340500049
+
+---
